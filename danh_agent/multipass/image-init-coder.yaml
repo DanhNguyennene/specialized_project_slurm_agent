@@ -1,0 +1,1409 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+
+packages:
+  - python3-pip
+  - python3-venv
+  - docker.io
+  - docker-compose
+  - curl
+  - jq
+  - htop
+  - git
+  - vim
+  - inotifywait
+  - inotify-tools
+groups:
+  - docker
+
+users:
+  - default
+  - name: ubuntu
+    groups: [docker, sudo]
+    shell: /bin/bash
+
+
+runcmd:
+  - 'sleep 10'
+  - 'sudo -u ubuntu python3 -m venv /home/ubuntu/tool_server_env'
+  - 'sudo -u ubuntu /home/ubuntu/tool_server_env/bin/pip install --upgrade pip'
+  - |
+    cat << 'EOF' > /home/ubuntu/requirements.txt
+    fastapi
+    uvicorn[standard]
+    requests
+    psutil
+    python-dotenv
+    mcp
+    fastmcp
+    asyncio
+    EOF
+  - 'sudo -u ubuntu /home/ubuntu/tool_server_env/bin/pip install -r /home/ubuntu/requirements.txt'
+  - |   
+    cat << 'EOF' > /home/ubuntu/.env
+    # This is the secret key the agent must provide to use the tools.
+    # For production, generate a more random string.
+    TOOL_SERVER_API_KEY="API_KEY_PLACEHOLDER"
+    WORKING_DIRECTORY="/home/ubuntu/"
+    EOF
+
+  - |
+    cat << 'EOF' > /home/ubuntu/tool_server.py
+    import asyncio
+    import websockets
+    import json
+    import logging
+    import subprocess
+    import shutil
+    import os
+    import tempfile
+    import psutil
+    from datetime import datetime
+    from pathlib import Path
+    from typing import Dict, Any, Optional
+    from mcp.server import Server
+    from mcp.types import TextContent, Tool
+
+    # Try to import docker, make it optional
+    try:
+        import docker
+        DOCKER_AVAILABLE = True
+    except ImportError:
+        DOCKER_AVAILABLE = False
+        docker = None
+
+    MCP_HOST = "0.0.0.0"
+    MCP_PORT = 3001
+    CONNECTION_MODE = "websocket"
+
+    logger = logging.getLogger(__name__)
+
+    class MCPWebSocketServer:
+        """MCP Server with WebSocket support using standard websockets library"""
+        
+        def __init__(self):
+            self.server = Server("vm-tool-server")
+            self.tools = {}  # Track tools manually
+            self.running_processes = {}  # Track async processes
+            self.docker_client = None
+            self.init_docker()
+            self.setup_tools()
+        
+        def init_docker(self):
+            """Initialize Docker client"""
+            if not DOCKER_AVAILABLE:
+                logger.warning("Docker library not available")
+                return
+                
+            try:
+                self.docker_client = docker.from_env()
+                logger.info("Docker client initialized successfully")
+            except Exception as e:
+                logger.warning(f"Docker not available: {e}")
+                self.docker_client = None
+        
+        def setup_tools(self):
+            """Setup MCP tools"""
+            
+            @self.server.call_tool()
+            async def shell_command(
+                command: str,
+                timeout: int = 60,
+                async_execution: bool = False,
+                working_directory: Optional[str] = None
+            ) -> list:
+                """Execute shell commands"""
+                try:
+                    logger.info(f"Executing command: {command}")
+                    
+                    # Set working directory
+                    cwd = Path(working_directory) if working_directory else Path.home()
+                    
+                    if async_execution:
+                        # Start process asynchronously
+                        process = subprocess.Popen(
+                            command,
+                            shell=True,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True,
+                            cwd=str(cwd)
+                        )
+                        
+                        process_id = f"proc_{len(self.running_processes)}"
+                        self.running_processes[process_id] = process
+                        
+                        result = {
+                            "success": True,
+                            "process_id": process_id,
+                            "message": f"Command started asynchronously with ID: {process_id}",
+                            "command": command,
+                            "working_directory": str(cwd)
+                        }
+                    else:
+                        # Execute synchronously
+                        result = subprocess.run(
+                            command,
+                            shell=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=timeout,
+                            cwd=str(cwd)
+                        )
+                        
+                        response = {
+                            "success": result.returncode == 0,
+                            "returncode": result.returncode,
+                            "stdout": result.stdout,
+                            "stderr": result.stderr,
+                            "command": command,
+                            "working_directory": str(cwd)
+                        }
+                        result = response
+                        
+                except subprocess.TimeoutExpired:
+                    result = {
+                        "success": False,
+                        "error": f"Command timed out after {timeout} seconds",
+                        "command": command
+                    }
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "command": command
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def docker_container(
+                image: str,
+                command: str = "",
+                timeout: int = 120,
+                async_execution: bool = False,
+                ports: Optional[Dict[str, str]] = None
+            ) -> list:
+                """Run Docker containers on the VM"""
+                if self.docker_client is None:
+                    return [TextContent(type="text", text=json.dumps({
+                        "success": False,
+                        "error": "Docker is not available on this system"
+                    }, indent=2))]
+                
+                try:
+                    logger.info(f"Running Docker container: {image}")
+                    
+                    # Prepare port configuration
+                    port_bindings = {}
+                    if ports:
+                        for host_port, container_port in ports.items():
+                            port_bindings[container_port] = host_port
+                    
+                    if async_execution:
+                        # Run container asynchronously
+                        container = self.docker_client.containers.run(
+                            image,
+                            command=command if command else None,
+                            detach=True,
+                            ports=port_bindings if port_bindings else None,
+                            remove=False
+                        )
+                        
+                        result = {
+                            "success": True,
+                            "container_id": container.id,
+                            "container_name": container.name,
+                            "image": image,
+                            "status": "running",
+                            "ports": port_bindings
+                        }
+                    else:
+                        # Run container synchronously
+                        container = self.docker_client.containers.run(
+                            image,
+                            command=command if command else None,
+                            detach=False,
+                            ports=port_bindings if port_bindings else None,
+                            remove=True
+                        )
+                        
+                        result = {
+                            "success": True,
+                            "output": container.decode('utf-8') if isinstance(container, bytes) else str(container),
+                            "image": image,
+                            "command": command,
+                            "ports": port_bindings
+                        }
+                        
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "image": image
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def read_file(
+                file_path: str,
+                lines: Optional[int] = None,
+                tail: Optional[int] = None,
+                encoding: str = "utf-8"
+            ) -> list:
+                """Read files from filesystem"""
+                try:
+                    path = Path(file_path)
+                    
+                    if not path.exists():
+                        result = {
+                            "success": False,
+                            "error": f"File not found: {file_path}"
+                        }
+                    else:
+                        with open(path, 'r', encoding=encoding) as f:
+                            if tail:
+                                content_lines = f.readlines()
+                                content = ''.join(content_lines[-tail:])
+                            elif lines:
+                                content_lines = []
+                                for i, line in enumerate(f):
+                                    if i >= lines:
+                                        break
+                                    content_lines.append(line)
+                                content = ''.join(content_lines)
+                            else:
+                                content = f.read()
+                        
+                        result = {
+                            "success": True,
+                            "file_path": str(path.absolute()),
+                            "content": content,
+                            "size": path.stat().st_size,
+                            "encoding": encoding
+                        }
+                        
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "file_path": file_path
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def write_file(
+                file_path: str,
+                content: str,
+                append: bool = False,
+                create_dirs: bool = True,
+                backup: bool = False
+            ) -> list:
+                """Write content to files"""
+                try:
+                    path = Path(file_path)
+                    
+                    if create_dirs:
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    if backup and path.exists():
+                        backup_path = path.with_suffix(path.suffix + '.backup')
+                        shutil.copy2(path, backup_path)
+                    
+                    mode = 'a' if append else 'w'
+                    with open(path, mode, encoding='utf-8') as f:
+                        f.write(content)
+                    
+                    result = {
+                        "success": True,
+                        "file_path": str(path.absolute()),
+                        "mode": "append" if append else "write",
+                        "size": path.stat().st_size,
+                        "backup_created": backup and path.exists()
+                    }
+                    
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "file_path": file_path
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def list_directory(
+                directory_path: str,
+                recursive: bool = False,
+                show_hidden: bool = False,
+                details: bool = False
+            ) -> list:
+                """List contents of directories on the VM"""
+                try:
+                    path = Path(directory_path)
+                    
+                    if not path.exists():
+                        return [TextContent(type="text", text=json.dumps({
+                            "success": False,
+                            "error": f"Directory not found: {directory_path}"
+                        }, indent=2))]
+                    
+                    if not path.is_dir():
+                        return [TextContent(type="text", text=json.dumps({
+                            "success": False,
+                            "error": f"Path is not a directory: {directory_path}"
+                        }, indent=2))]
+                    
+                    items = []
+                    
+                    if recursive:
+                        pattern = "**/*" if show_hidden else "**/[!.]*"
+                        for item in path.glob(pattern):
+                            if details:
+                                stat = item.stat()
+                                items.append({
+                                    "name": item.name,
+                                    "path": str(item.absolute()),
+                                    "type": "directory" if item.is_dir() else "file",
+                                    "size": stat.st_size if item.is_file() else None,
+                                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                                })
+                            else:
+                                items.append({
+                                    "name": item.name,
+                                    "path": str(item.absolute()),
+                                    "type": "directory" if item.is_dir() else "file"
+                                })
+                    else:
+                        for item in path.iterdir():
+                            if not show_hidden and item.name.startswith('.'):
+                                continue
+                            
+                            if details:
+                                stat = item.stat()
+                                items.append({
+                                    "name": item.name,
+                                    "path": str(item.absolute()),
+                                    "type": "directory" if item.is_dir() else "file",
+                                    "size": stat.st_size if item.is_file() else None,
+                                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                                })
+                            else:
+                                items.append({
+                                    "name": item.name,
+                                    "path": str(item.absolute()),
+                                    "type": "directory" if item.is_dir() else "file"
+                                })
+                    
+                    result = {
+                        "success": True,
+                        "directory_path": str(path.absolute()),
+                        "items": sorted(items, key=lambda x: (x["type"], x["name"])),
+                        "total_items": len(items)
+                    }
+                    
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "directory_path": directory_path
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def search_files(
+                directory_path: str,
+                pattern: str,
+                recursive: bool = True,
+                content_search: Optional[str] = None,
+                max_results: int = 100
+            ) -> list:
+                """Search for files on the VM filesystem"""
+                try:
+                    path = Path(directory_path)
+                    
+                    if not path.exists():
+                        return [TextContent(type="text", text=json.dumps({
+                            "success": False,
+                            "error": f"Directory not found: {directory_path}"
+                        }, indent=2))]
+                    
+                    results = []
+                    search_pattern = f"**/{pattern}" if recursive else pattern
+                    
+                    for item in path.glob(search_pattern):
+                        if len(results) >= max_results:
+                            break
+                            
+                        result_item = {
+                            "name": item.name,
+                            "path": str(item.absolute()),
+                            "type": "directory" if item.is_dir() else "file",
+                            "size": item.stat().st_size if item.is_file() else None
+                        }
+                        
+                        # Content search for text files
+                        if content_search and item.is_file():
+                            try:
+                                with open(item, 'r', encoding='utf-8', errors='ignore') as f:
+                                    content = f.read()
+                                    if content_search.lower() in content.lower():
+                                        result_item["content_match"] = True
+                                        # Find line number of first match
+                                        lines = content.split('\n')
+                                        for i, line in enumerate(lines):
+                                            if content_search.lower() in line.lower():
+                                                result_item["first_match_line"] = i + 1
+                                                result_item["match_preview"] = line.strip()
+                                                break
+                                        results.append(result_item)
+                            except:
+                                # Skip files that can't be read as text
+                                continue
+                        elif not content_search:
+                            results.append(result_item)
+                    
+                    result = {
+                        "success": True,
+                        "directory_path": str(path.absolute()),
+                        "pattern": pattern,
+                        "content_search": content_search,
+                        "results": results,
+                        "total_found": len(results),
+                        "max_results": max_results
+                    }
+                    
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "directory_path": directory_path
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def list_processes(
+                status_filter: Optional[str] = None,
+                limit: int = 50
+            ) -> list:
+                """List running processes on the VM"""
+                try:
+                    processes = []
+                    
+                    # Get system processes
+                    for proc in psutil.process_iter(['pid', 'name', 'status', 'cpu_percent', 'memory_percent', 'create_time']):
+                        try:
+                            proc_info = proc.info
+                            if status_filter and proc_info['status'] != status_filter:
+                                continue
+                            
+                            processes.append({
+                                "pid": proc_info['pid'],
+                                "name": proc_info['name'],
+                                "status": proc_info['status'],
+                                "cpu_percent": proc_info['cpu_percent'],
+                                "memory_percent": proc_info['memory_percent'],
+                                "create_time": datetime.fromtimestamp(proc_info['create_time']).isoformat()
+                            })
+                            
+                            if len(processes) >= limit:
+                                break
+                                
+                        except (psutil.NoSuchProcess, psutil.AccessDenied):
+                            continue
+                    
+                    # Add our tracked async processes
+                    for proc_id, proc in self.running_processes.items():
+                        if proc.poll() is None:  # Still running
+                            processes.append({
+                                "process_id": proc_id,
+                                "pid": proc.pid,
+                                "name": "async_shell_command",
+                                "status": "running",
+                                "type": "tracked_async"
+                            })
+                    
+                    result = {
+                        "success": True,
+                        "processes": processes,
+                        "total_found": len(processes),
+                        "limit": limit,
+                        "status_filter": status_filter
+                    }
+                    
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e)
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def get_process_logs(
+                process_id: str,
+                lines: int = 100
+            ) -> list:
+                """Get logs from a specific process on the VM"""
+                try:
+                    if process_id not in self.running_processes:
+                        return [TextContent(type="text", text=json.dumps({
+                            "success": False,
+                            "error": f"Process ID not found: {process_id}"
+                        }, indent=2))]
+                    
+                    proc = self.running_processes[process_id]
+                    
+                    if proc.poll() is not None:
+                        # Process finished, get final output
+                        stdout, stderr = proc.communicate()
+                        result = {
+                            "success": True,
+                            "process_id": process_id,
+                            "status": "completed",
+                            "returncode": proc.returncode,
+                            "stdout": stdout,
+                            "stderr": stderr
+                        }
+                        # Remove from tracking
+                        del self.running_processes[process_id]
+                    else:
+                        # Process still running, get partial output if available
+                        result = {
+                            "success": True,
+                            "process_id": process_id,
+                            "status": "running",
+                            "message": "Process is still running. Full output available when completed."
+                        }
+                    
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "process_id": process_id
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            @self.server.call_tool()
+            async def create_directory(
+                directory_path: str,
+                parents: bool = True,
+                mode: str = "755"
+            ) -> list:
+                """Create directories on the VM"""
+                try:
+                    path = Path(directory_path)
+                    
+                    # Convert mode string to octal
+                    mode_octal = int(mode, 8)
+                    
+                    if parents:
+                        path.mkdir(parents=True, exist_ok=True, mode=mode_octal)
+                    else:
+                        path.mkdir(mode=mode_octal)
+                    
+                    result = {
+                        "success": True,
+                        "directory_path": str(path.absolute()),
+                        "created": True,
+                        "mode": mode,
+                        "parents": parents
+                    }
+                    
+                except FileExistsError:
+                    result = {
+                        "success": True,
+                        "directory_path": str(Path(directory_path).absolute()),
+                        "created": False,
+                        "message": "Directory already exists"
+                    }
+                except Exception as e:
+                    result = {
+                        "success": False,
+                        "error": str(e),
+                        "directory_path": directory_path
+                    }
+                
+                return [TextContent(type="text", text=json.dumps(result, indent=2))]
+            
+            # Manually register tools for our tracking
+            self.tools = {
+                "shell_command": shell_command,
+                "docker_container": docker_container,
+                "read_file": read_file,
+                "write_file": write_file,
+                "list_directory": list_directory,
+                "search_files": search_files,
+                "list_processes": list_processes,
+                "get_process_logs": get_process_logs,
+                "create_directory": create_directory
+            }
+
+        async def handle_websocket_connection(self, websocket):
+            """Handle individual WebSocket connections"""
+            client_address = f"{websocket.remote_address[0]}:{websocket.remote_address[1]}"
+            logger.info(f"New WebSocket connection from {client_address}")
+            
+            try:
+                async for message in websocket:
+                    try:
+                        # Parse incoming JSON-RPC message
+                        data = json.loads(message)
+                        logger.debug(f"Received message: {data}")
+                        
+                        # Handle different message types
+                        response = await self.handle_mcp_message(data)
+                        
+                        if response:
+                            response_json = json.dumps(response)
+                            await websocket.send(response_json)
+                            logger.debug(f"Sent response: {response}")
+                            
+                    except json.JSONDecodeError as e:
+                        # Send JSON-RPC error response
+                        error_response = {
+                            "jsonrpc": "2.0",
+                            "id": None,
+                            "error": {
+                                "code": -32700,
+                                "message": "Parse error",
+                                "data": str(e)
+                            }
+                        }
+                        await websocket.send(json.dumps(error_response))
+                        
+                    except Exception as e:
+                        logger.error(f"Error handling message: {e}")
+                        # Send generic error response
+                        error_response = {
+                            "jsonrpc": "2.0", 
+                            "id": data.get("id") if isinstance(data, dict) else None,
+                            "error": {
+                                "code": -32603,
+                                "message": "Internal error",
+                                "data": str(e)
+                            }
+                        }
+                        await websocket.send(json.dumps(error_response))
+                        
+            except websockets.exceptions.ConnectionClosed:
+                logger.info(f"WebSocket connection closed: {client_address}")
+            except Exception as e:
+                logger.error(f"WebSocket connection error: {e}")
+
+        async def handle_mcp_message(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+            """Handle MCP protocol messages"""
+            
+            if not isinstance(data, dict) or data.get("jsonrpc") != "2.0":
+                return {
+                    "jsonrpc": "2.0",
+                    "id": data.get("id"),
+                    "error": {
+                        "code": -32600,
+                        "message": "Invalid Request"
+                    }
+                }
+            
+            method = data.get("method")
+            message_id = data.get("id")
+            params = data.get("params", {})
+            
+            try:
+                if method == "initialize":
+                    # Handle initialization
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": message_id,
+                        "result": {
+                            "protocolVersion": "2024-11-05",
+                            "capabilities": {
+                                "tools": {}
+                            },
+                            "serverInfo": {
+                                "name": "vm-tool-server",
+                                "version": "1.0.0"
+                            }
+                        }
+                    }
+                    
+                elif method == "tools/list":
+                    # Return available tools using our manual tracking
+                    tools = []
+                    for tool_name, tool_func in self.tools.items():
+                        # Get tool schema from function signature and docstring
+                        import inspect
+                        sig = inspect.signature(tool_func)
+                        
+                        properties = {}
+                        required = []
+                        
+                        for param_name, param in sig.parameters.items():
+                            if param_name in ['self']:
+                                continue
+                                
+                            param_info = {
+                                "type": "string"  # Default to string, could be enhanced
+                            }
+                            
+                            # Check if parameter has a default value
+                            if param.default == inspect.Parameter.empty:
+                                required.append(param_name)
+                            else:
+                                param_info["default"] = param.default
+                            
+                            # Add type hints if available
+                            if param.annotation != inspect.Parameter.empty:
+                                if param.annotation == int:
+                                    param_info["type"] = "integer"
+                                elif param.annotation == bool:
+                                    param_info["type"] = "boolean"
+                                elif param.annotation == float:
+                                    param_info["type"] = "number"
+                            
+                            properties[param_name] = param_info
+                        
+                        tools.append({
+                            "name": tool_name,
+                            "description": tool_func.__doc__ or f"Tool: {tool_name}",
+                            "inputSchema": {
+                                "type": "object",
+                                "properties": properties,
+                                "required": required
+                            }
+                        })
+                    
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": message_id,
+                        "result": {
+                            "tools": tools
+                        }
+                    }
+                    
+                elif method == "tools/call":
+                    # Call a tool
+                    tool_name = params.get("name")
+                    arguments = params.get("arguments", {})
+                    
+                    if tool_name not in self.tools:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": message_id,
+                            "error": {
+                                "code": -32601,
+                                "message": f"Tool not found: {tool_name}"
+                            }
+                        }
+                    
+                    # Execute the tool
+                    tool_func = self.tools[tool_name]
+                    try:
+                        result = await tool_func(**arguments)
+                        
+                        # Convert result to proper format
+                        if isinstance(result, list):
+                            tool_result = [{"type": item.type, "text": item.text} for item in result]
+                        else:
+                            tool_result = [{"type": "text", "text": str(result)}]
+                        
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": message_id,
+                            "result": tool_result
+                        }
+                        
+                    except Exception as e:
+                        logger.error(f"Tool execution error: {e}")
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": message_id,
+                            "error": {
+                                "code": -32603,
+                                "message": f"Tool execution failed: {str(e)}"
+                            }
+                        }
+                        
+                else:
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": message_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"Method not found: {method}"
+                        }
+                    }
+                    
+            except Exception as e:
+                logger.error(f"Error handling MCP message: {e}")
+                return {
+                    "jsonrpc": "2.0",
+                    "id": message_id,
+                    "error": {
+                        "code": -32603,
+                        "message": "Internal error",
+                        "data": str(e)
+                    }
+                }
+
+        async def start_server(self):
+            """Start the WebSocket server"""
+            if CONNECTION_MODE == "websocket":
+                logger.info(f"Starting MCP Tool Server (websocket mode) on {MCP_HOST}:{MCP_PORT}...")
+                
+                # Start WebSocket server using standard websockets library
+                async with websockets.serve(
+                    self.handle_websocket_connection,
+                    host=MCP_HOST,
+                    port=MCP_PORT,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    max_size=1024*1024,  # 1MB max message size
+                    max_queue=32
+                ) as ws_server:
+                    logger.info(f"MCP WebSocket server started on ws://{MCP_HOST}:{MCP_PORT}")
+                    logger.info("Server is ready to accept connections...")
+                    
+                    # Keep the server running
+                    try:
+                        await ws_server.wait_closed()
+                    except KeyboardInterrupt:
+                        logger.info("Server shutdown requested")
+                    except Exception as e:
+                        logger.error(f"Server error: {e}")
+
+    # Test client for debugging
+    async def test_client():
+        """Simple test client to verify the server works"""
+        uri = f"ws://{MCP_HOST}:{MCP_PORT}"
+        
+        try:
+            async with websockets.connect(uri) as websocket:
+                print("Connected to MCP server")
+                
+                # Test initialization
+                init_message = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {},
+                        "clientInfo": {
+                            "name": "test-client",
+                            "version": "1.0.0"
+                        }
+                    }
+                }
+                
+                await websocket.send(json.dumps(init_message))
+                response = await websocket.recv()
+                print("Initialize response:", json.loads(response))
+                
+                # Test tools list
+                tools_message = {
+                    "jsonrpc": "2.0",
+                    "id": 2,
+                    "method": "tools/list",
+                    "params": {}
+                }
+                
+                await websocket.send(json.dumps(tools_message))
+                response = await websocket.recv()
+                tools_response = json.loads(response)
+                print(f"Available tools: {len(tools_response['result']['tools'])}")
+                for tool in tools_response['result']['tools']:
+                    print(f"  - {tool['name']}: {tool['description']}")
+                
+                # Test tool call
+                tool_message = {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "shell_command",
+                        "arguments": {
+                            "command": "echo 'Hello from MCP!'"
+                        }
+                    }
+                }
+                
+                await websocket.send(json.dumps(tool_message))
+                response = await websocket.recv()
+                print("Tool response:", json.loads(response))
+                
+        except Exception as e:
+            print(f"Test failed: {e}")
+
+    # Usage
+    async def main():
+        """Main function"""
+        server = MCPWebSocketServer()
+        await server.start_server()
+
+    if __name__ == "__main__":
+        logging.basicConfig(level=logging.INFO)
+        
+        # Uncomment to run test client instead of server
+        # asyncio.run(test_client())
+        
+        # Run server
+        asyncio.run(main())
+    EOF
+  - 'chown ubuntu:ubuntu /home/ubuntu/tool_server.py /home/ubuntu/.env'
+  - 'chmod 755 /home/ubuntu/tool_server.py'
+  - 'chmod 600 /home/ubuntu/.env'
+
+  - |
+    cat << 'EOF' > /etc/systemd/system/toolserver.service
+    [Unit]
+    Description=Agent MCP Tool Server
+    After=network.target docker.service
+
+    [Service]
+    Type=exec
+    User=ubuntu
+    Group=docker
+    WorkingDirectory=/home/ubuntu/
+    EnvironmentFile=/home/ubuntu/.env 
+    Environment=PATH=/home/ubuntu/tool_server_env/bin:/usr/bin:/bin
+    ExecStart=/home/ubuntu/tool_server_env/bin/uvicorn tool_server:app --host 0.0.0.0 --port 8000
+    Restart=always
+    RestartSec=10
+    StandardOutput=journal
+    StandardError=journal
+    NoNewPrivileges=yes
+    ProtectSystem=strict
+    ProtectHome=yes
+    ReadWritePaths=/home/ubuntu
+    PrivateTmp=yes
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+  # Create a startup script for convenience
+  - |
+    cat << 'EOF' > /home/ubuntu/start_server.sh
+    #!/bin/bash
+
+    cd /home/ubuntu
+
+    export VIRTUAL_ENV="/home/ubuntu/tool_server_env"
+    export PATH="$VIRTUAL_ENV/bin:$PATH"
+
+    if ! command -v uvicorn &> /dev/null; then
+        echo "uvicorn not found, trying to activate virtual environment..."
+        # Alternative activation method
+        source /home/ubuntu/tool_server_env/bin/activate
+    fi
+
+    echo "Starting Tool Server..."
+    python tool_server.py
+    EOF
+  - |
+    cat << 'EOF' > /home/ubuntu/process_controller.py
+    import subprocess
+    import asyncio
+    import json
+    import logging
+    import threading
+    import time
+    import os
+    import uuid
+    from datetime import datetime, timedelta
+    from typing import Dict, List, Optional, Tuple, Any
+    from dataclasses import dataclass, field
+    from enum import Enum
+    from concurrent.futures import ThreadPoolExecutor
+    from hashlib import sha256
+    from queue import Queue, Empty
+
+
+    class ProcessStatus(Enum):
+        RUNNING = "running"
+        COMPLETED = "completed"
+        FAILED = "failed"
+        KILLED = "killed"
+        UNKNOWN = "unknown"
+
+    @dataclass
+    class HostProcessInfo:
+        process_id: str
+        command: str
+        status: ProcessStatus = ProcessStatus.UNKNOWN
+        start_time: Optional[datetime] = None
+        end_time: Optional[datetime] = None
+        log_file_host: str = ""
+        exit_code: Optional[int] = None
+        error_message: Optional[str] = None
+        output_lines: List[str] = field(default_factory=list)
+        process_thread: Optional[threading.Thread] = None
+        stop_event: Optional[threading.Event] = None
+        log_queue: Optional[Queue] = None
+        log_writer_thread: Optional[threading.Thread] = None
+
+    class HostProcessTracker:
+        """Tracks processes running on the host that send commands to VMs"""
+
+        def __init__(self, mcp_name: str, log_dir: str = "/home/ubuntu/vm_logs", 
+                    execution_mode: str = "login_shell"):
+            self.mcp_name = mcp_name
+            self.log_dir = log_dir
+            self.execution_mode = execution_mode  # "login_shell", "interactive", "minimal", "custom"
+            self.processes: Dict[str, HostProcessInfo] = {}
+            self.lock = threading.Lock()
+            
+            # Ensure log directory exists
+            os.makedirs(self.log_dir, exist_ok=True)
+
+        def execute_command(self, command: str, async_execution: bool = True) -> HostProcessInfo:
+            """Start a command execution in a separate thread and track it on the host"""
+            process_id = str(uuid.uuid4())
+            log_filename = f"{self.mcp_name}_{process_id}.log"
+            log_file_host = os.path.join(self.log_dir, log_filename)
+            
+            # Create process info
+            process_info = HostProcessInfo(
+                process_id=process_id,
+                command=command,
+                start_time=datetime.now(),
+                log_file_host=log_file_host,
+                status=ProcessStatus.RUNNING,
+                log_queue=Queue(),
+                stop_event=threading.Event()
+            )
+            
+            # Start log writer thread FIRST
+            process_info.log_writer_thread = threading.Thread(
+                target=self._log_writer_thread,
+                args=(process_info,),
+                daemon=True
+            )
+            process_info.log_writer_thread.start()
+            
+            # Add to processes dict before starting execution
+            with self.lock:
+                self.processes[process_id] = process_info
+            
+            if async_execution == False:
+                # SYNCHRONOUS: Execute command and wait for completion
+                self._execute_command_sync(process_info)
+            else:
+                # ASYNCHRONOUS: Start execution thread and return immediately
+                process_info.process_thread = threading.Thread(
+                    target=self._execute_command_thread,
+                    args=(process_info,),
+                    daemon=True
+                )
+                process_info.process_thread.start()
+            
+            return process_info
+        
+        def _execute_command_sync(self, process_info: HostProcessInfo):
+            """Execute command synchronously (blocking)"""
+            self._execute_command_thread(process_info)
+        
+        def _execute_command_thread(self, process_info: HostProcessInfo):
+            """Thread function that executes the command via multipass exec"""
+            try:
+                # Log command start
+                start_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Starting command: {process_info.command}\n"
+                start_msg += f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Process ID: {process_info.process_id}\n"
+                start_msg += "=" * 80 + "\n"
+                
+                # Add to queue and in-memory storage
+                process_info.log_queue.put(start_msg)
+                process_info.output_lines.append(start_msg.strip())
+                
+                # Build command based on execution mode
+                cmd = self._build_execution_command(process_info)
+                
+                # Start the subprocess
+                process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,  # Merge stderr with stdout
+                    universal_newlines=True,
+                    bufsize=1  # Line buffered
+                )
+                
+                # Read output line by line in real-time
+                try:
+                    for line in iter(process.stdout.readline, ''):
+                        if process_info.stop_event.is_set():
+                            # Kill the process if stop event is set
+                            process.terminate()
+                            time.sleep(1)
+                            if process.poll() is None:
+                                process.kill()
+                            process_info.status = ProcessStatus.KILLED
+                            break
+                        
+                        if line:  # Non-empty line
+                            line = line.rstrip('\n\r')  # Remove trailing newlines
+                            timestamped_line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {line}\n"
+                            
+                            # Add to both queue and in-memory storage
+                            process_info.log_queue.put(timestamped_line)
+                            process_info.output_lines.append(line)
+                    
+                    # Wait for process to complete
+                    process.wait()
+                    
+                except Exception as e:
+                    error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Error reading output: {str(e)}\n"
+                    process_info.log_queue.put(error_msg)
+                    process_info.output_lines.append(f"Error reading output: {str(e)}")
+                
+                # Get exit code
+                process_info.exit_code = process.returncode
+                
+                # Determine final status
+                if process_info.status != ProcessStatus.KILLED:
+                    if process_info.exit_code == 0:
+                        process_info.status = ProcessStatus.COMPLETED
+                    else:
+                        process_info.status = ProcessStatus.FAILED
+                
+                # Log completion
+                end_msg = "=" * 80 + "\n"
+                end_msg += f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Command finished\n"
+                end_msg += f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Status: {process_info.status.value}\n"
+                end_msg += f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Exit code: {process_info.exit_code}\n"
+                
+                process_info.log_queue.put(end_msg)
+                process_info.output_lines.append(f"Command finished - Status: {process_info.status.value}, Exit code: {process_info.exit_code}")
+                
+            except Exception as e:
+                process_info.status = ProcessStatus.FAILED
+                process_info.error_message = str(e)
+                error_msg = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] ERROR: {str(e)}\n"
+                process_info.log_queue.put(error_msg)
+                process_info.output_lines.append(f"ERROR: {str(e)}")
+            
+            finally:
+                process_info.end_time = datetime.now()
+                # Signal log writer to stop by putting None
+                process_info.log_queue.put(None)
+        
+        def _build_execution_command(self, process_info: HostProcessInfo) -> List[str]:
+            """Build the appropriate execution command based on mode"""
+            # Always use bash -c for proper command execution
+            return ["bash", "-c", process_info.command]
+        
+        def _log_writer_thread(self, process_info: HostProcessInfo):
+            """Thread function that writes logs to file in real-time"""
+            try:
+                # Ensure the log file exists and is writable
+                with open(process_info.log_file_host, 'w', buffering=1) as log_file:  # Line buffered
+                    while True:
+                        try:
+                            # Get log entry from queue (blocking with timeout)
+                            log_entry = process_info.log_queue.get(timeout=2)
+                            
+                            if log_entry is None:
+                                # None is the signal to stop
+                                log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Log writer stopping\n")
+                                log_file.flush()
+                                break
+                            
+                            # Write to file and flush immediately for real-time logging
+                            log_file.write(log_entry)
+                            log_file.flush()  # Force write to disk
+                            os.fsync(log_file.fileno())  # Force OS to write to disk
+                            
+                        except Empty:
+                            # Timeout occurred, check if process is still running
+                            if process_info.status not in [ProcessStatus.RUNNING, ProcessStatus.UNKNOWN]:
+                                # Process finished, but there might still be logs in queue
+                                # Try to get remaining logs with short timeout
+                                try:
+                                    while True:
+                                        log_entry = process_info.log_queue.get_nowait()
+                                        if log_entry is None:
+                                            break
+                                        log_file.write(log_entry)
+                                        log_file.flush()
+                                except Empty:
+                                    pass
+                                break
+                            continue
+                            
+            except Exception as e:
+                logging.error(f"Error in log writer for process {process_info.process_id}: {e}")
+                # Try to write error to file if possible
+                try:
+                    with open(process_info.log_file_host, 'a') as log_file:
+                        log_file.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] LOG WRITER ERROR: {str(e)}\n")
+                        log_file.flush()
+                except:
+                    pass
+        
+        def kill_process(self, process_id: str) -> bool:
+            """Kill a specific process"""
+            with self.lock:
+                if process_id not in self.processes:
+                    return False
+                
+                process_info = self.processes[process_id]
+                
+                if process_info.status == ProcessStatus.RUNNING:
+                    process_info.stop_event.set()
+                    return True
+                
+                return False
+        
+        def get_process_info(self, process_id: str) -> Optional[HostProcessInfo]:
+            """Get information about a specific process"""
+            with self.lock:
+                return self.processes.get(process_id)
+        
+        def list_processes(self) -> List[HostProcessInfo]:
+            """List all processes, optionally filtered by agent_id"""
+            with self.lock:
+                processes = list(self.processes.values())
+                return processes
+        
+        def get_process_logs(self, process_id: str, lines: int = 100) -> str:
+            """Get recent logs for a process"""
+            with self.lock:
+                if process_id not in self.processes:
+                    return ""
+                
+                process_info = self.processes[process_id]
+                
+                try:
+                    # First try to read from file
+                    if os.path.exists(process_info.log_file_host) and os.path.getsize(process_info.log_file_host) > 0:
+                        with open(process_info.log_file_host, 'r') as f:
+                            content = f.read()
+                            if content.strip():  # File has content
+                                lines_list = content.split('\n')
+                                return '\n'.join(lines_list[-lines:]) if len(lines_list) > lines else content
+                    
+                    # If file is empty or doesn't exist, return in-memory logs
+                    if process_info.output_lines:
+                        return '\n'.join(process_info.output_lines[-lines:])
+                    
+                    # If no logs available, return status info
+                    return f"Process {process_id} - Status: {process_info.status.value}, No output captured yet"
+                    
+                except Exception as e:
+                    logging.error(f"Error reading logs for process {process_id}: {e}")
+                    # Return in-memory logs as fallback
+                    if process_info.output_lines:
+                        return '\n'.join(process_info.output_lines[-lines:])
+                    return f"Error reading logs: {str(e)}"
+        
+        def wait_for_process(self, process_id: str, timeout: Optional[float] = None) -> bool:
+            """Wait for a process to complete"""
+            with self.lock:
+                if process_id not in self.processes:
+                    return False
+                process_info = self.processes[process_id]
+            
+            if process_info.process_thread:
+                process_info.process_thread.join(timeout)
+                return not process_info.process_thread.is_alive()
+            else:
+                # Synchronous process - already completed
+                return True
+        
+        def cleanup_completed_processes(self, max_age_hours: int = 24):
+            """Clean up completed processes older than max_age_hours"""
+            cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+            
+            with self.lock:
+                to_remove = []
+                for process_id, process_info in self.processes.items():
+                    if (process_info.status in [ProcessStatus.COMPLETED, ProcessStatus.FAILED, ProcessStatus.KILLED] 
+                        and process_info.end_time 
+                        and process_info.end_time < cutoff_time):
+                        to_remove.append(process_id)
+                
+                for process_id in to_remove:
+                    del self.processes[process_id]
+                    logging.info(f"Cleaned up old process {process_id}")
+
+    EOF
+    
+  - 'chmod +x /home/ubuntu/start_server.sh'
+  - 'chown ubuntu:ubuntu /home/ubuntu/start_server.sh'
+
+  # Start Docker service and add user to docker group
+  - 'systemctl enable docker'
+  - 'systemctl start docker'
+  - 'usermod -aG docker ubuntu'
+
+  # Enable and start the tool server service
+  - 'systemctl daemon-reload'
+  - 'systemctl enable toolserver.service'
+  - 'systemctl start toolserver.service'
+
+  # Create a simple test script
+  - |
+    cat << 'EOF' > /home/ubuntu/test_server.sh
+    #!/bin/bash
+    echo "Testing Tool Server..."
+    sleep 5
+    
+    echo "1. Health check:"
+    curl -s http://localhost:8000/health | jq .
+    
+    echo -e "\n2. System info:"
+    curl -s http://localhost:8000/tools/system/info | jq .
+    
+    echo -e "\n3. Simple shell command:"
+    curl -s -X POST http://localhost:8000/tools/shell/run \
+      -H "Content-Type: application/json" \
+      -d '{"command": "echo Hello World && date"}' | jq .
+    
+    echo -e "\n4. Docker test:"
+    curl -s -X POST http://localhost:8000/tools/docker/run \
+      -H "Content-Type: application/json" \
+      -d '{"image": "hello-world"}' | jq .
+    EOF
+    # get ip script
+  - 'chmod +x /home/ubuntu/test_server.sh'
+  - 'chown ubuntu:ubuntu /home/ubuntu/test_server.sh'
+
+  # Final setup
+  - 'chown -R ubuntu:ubuntu /home/ubuntu'
+
+# Create a file to indicate setup completion
+write_files:
+  - path: /home/ubuntu/setup_complete.txt
+    content: |
+      Tool Server setup completed at $(date)
+      
+      Services:
+      - Tool Server API: http://localhost:8000
+      - Docker: Available
+      
+      Test the server:
+      ./test_server.sh
+      
+      Manual start:
+      ./start_server.sh
+      
+      Check service status:
+      sudo systemctl status toolserver
+      
+      View logs:
+      sudo journalctl -u toolserver -f
+    owner: ubuntu:ubuntu
+    permissions: '0644'
+
+# Ensure services start on boot
+bootcmd:
+  - 'systemctl enable docker'
+  - 'systemctl enable toolserver'

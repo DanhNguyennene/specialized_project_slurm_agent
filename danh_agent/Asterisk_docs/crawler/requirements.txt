@@ -1,0 +1,5 @@
+beautifulsoup4==4.13.4
+fastapi==0.116.1
+html2text==2025.4.15
+markdown-it-py==3.0.0
+Scrapy==2.13.3

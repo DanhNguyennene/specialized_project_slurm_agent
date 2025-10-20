@@ -1,0 +1,66 @@
+
+services:
+  chromadb:
+    image: chromadb/chroma:1.0.7
+    ports:
+      - "8001:8000"
+    volumes:
+      - /mnt/e/workspace/chromadb_data:/chroma/chroma
+    environment:
+      - CHROMA_SERVER_HOST=0.0.0.0
+      - CHROMA_SERVER_HTTP_PORT=8000
+
+  rag:
+    depends_on:
+      - chromadb
+    build: ./
+    ports:
+      - "12000:12000"
+    command: uvicorn "rag:rag_server" --host 0.0.0.0 --port 12000
+    environment:
+      - CHROMA_SERVER_HOST=chromadb
+      - CHROMA_SERVER_HTTP_PORT=8000
+
+      
+  # vm_logs:
+  #   build: ./multipass/log_streaming_service
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     - LOG_DIR=/app/vm_logs
+  #     - MULTIPASS_CONTROLLER_PORT=8010
+  #     - MULTIPASS_CONTROLLER_IP=10.0.0.1
+  #   volumes:
+  #     - /home/danhvuive/vm_logs:/app/vm_logs
+
+
+# Uncomment the following section if you want to use Ollama 
+#   ollama:
+#     image: ollama/ollama:latest
+#     ports:
+#       - "11434:11434"
+#     volumes:
+#       - ollama_data:/root/.ollama
+#     environment:
+#       - OLLAMA_HOST=0.0.0.0
+#     command: serve
+
+#   agent-api:
+#     build: .
+#     ports:
+#       - "8000:8000"
+#     depends_on:
+#       - ollama
+#       - chromadb
+#     environment:
+#       - OLLAMA_BASE_URL=http://ollama:11434
+#       - CHROMADB_HOST=chromadb
+#       - CHROMADB_PORT=8000
+#     volumes:
+#       - .:/app
+#     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  chromadb_data:
+#   ollama_data:
+# """

@@ -1,0 +1,19 @@
+When to use: User wants to add a user to a specific group
+Prerequisites:
+
+Must have valid <auth_token> and <auth_type> from Authentication task
+Must have <group_id> from Get or Create Group task
+
+Steps:
+
+Update group with user
+
+Method: POST
+Endpoint: /api/v1/groups/id/<group_id>/update
+Headers: {"Authorization": "<auth_type> <auth_token>", "Content-Type": "application/json"}
+Body: {"name": "<name>", "description": "<description>", "user_ids": ["<user_uuid>"]}
+Expected Response: Updated group object with user_ids array
+
+
+
+Output: Updated group with user added

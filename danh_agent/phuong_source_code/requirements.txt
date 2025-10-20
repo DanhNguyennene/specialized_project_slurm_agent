@@ -1,0 +1,13 @@
+langchain
+langgraph
+typing
+chromadb
+transformers
+langchain_community
+langchain_ollama
+IPython
+vllm
+accelerate
+outlines
+paramiko
+chainlit

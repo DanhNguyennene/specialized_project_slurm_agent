@@ -1,0 +1,24 @@
+When to use: User wants to work with a specific group or needs a group ID
+Prerequisites: Must have valid <auth_token> and <auth_type> from Authentication task
+Steps:
+
+Check if group exists
+
+Method: GET
+Endpoint: /api/v1/groups/
+Headers: {"accept": "application/json", "Authorization": "<auth_type> <auth_token>"}
+Action: Look for group with matching name in response
+If found: Extract id as <group_id> and stop here
+
+
+If group not found, create it
+
+Method: POST
+Endpoint: /api/v1/groups/create
+Headers: {"Authorization": "<auth_type> <auth_token>", "Content-Type": "application/json"}
+Body: {"name": "<group_name>", "description": "string"}
+Expected Response: Contains id field
+
+
+
+Output: <group_id>

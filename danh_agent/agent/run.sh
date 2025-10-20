@@ -1,0 +1,1 @@
+python ./flow/agent_v2.py > logs/output.txt 2>&1

@@ -1,0 +1,7 @@
+release-*
+*.img
+*.iso
+*.tar.gz
+*.zip
+*.ext4
+linux.git

@@ -1,0 +1,1 @@
+Creating custom images for VM sandbox

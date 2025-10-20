@@ -1,0 +1,54 @@
+# Instruction Guide Detail
+
+---
+# Instruction Set (name of the Instruction)
+
+## Step 1
+- Action: <describe what to do>
+- Instruction: <actions to do in this step>
+- Require: <list prerequisite steps or "none">
+-> Output: <output of this step>
+
+## Step 2
+- Action: <describe what to do>
+- Instruction: <actions to do in this step>
+- Require: <list prerequisite steps or "none">
+-> Output: <output of this step>
+
+## Step 3
+- Action: <describe what to do>
+- Instruction: <actions to do in this step>
+- Require: <list prerequisite steps or "none">
+-> Output: <output of this step>
+
+## Step N
+- Action: <describe what to do>
+- Instruction: <actions to do in this step>
+- Require: <list prerequisite steps or "none">
+-> Output: <output of this step>
+---
+
+# Basic Action Guide
+can be refered as other document's Require.
+---
+# Action:
+
+## step 1: <description>
+- action: <action>
+- response: <expected response>
+
+-> Output: param_1, param_2, ...
+---
+
+# Detail:
+Each step always include Action, and either include Instruction or Require to instruct agent.
+
+## Step i: Step number i-th need to do to complete the action process.
+
+## Action: Description of what to do in that action.
+
+## Instruction: Include actions to do in this step.
+
+## Require: Include other documents in the database.
+
+## Output: Output for later step.

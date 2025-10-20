@@ -1,0 +1,69 @@
+# Instruction: Add User to Group
+
+# Basic Action Instruction: Get token authorization
+Signin as admin user
+---
+# Action:
+## Step 1: Sign in with admin credentials to obtain a JWT.
+- Aciont: POST method, Endpoint: `/api/v1/auths/signin`, Header: None, Body: {"email": "admin@gmail.com", "password": "admin"}
+- Response: {"token": "<user authorize token>", "token_type": "Bearer"}
+Fallback: If signin fails, create admin account first, foward to step 2
+
+## Step 2: Sign up with admin credentials (if step 1 is succeed, skip this step).
+- Aciont: POST method, Endpoint: `/api/v1/auths/signup`, Header: None, Body: {"name": "Admin","email": "admin@gmail.com", "password": "admin"}
+- Response: {"token": "<user authorize token>", "token_type": "Bearer"}
+
+-> Output: "token", "token_type" (in Response)
+---
+
+## Step 1: Validate group and get user ID.
+
+Instruction:
+  - Check group collection.
+  - Method: GET, Endpoint: /api/v1/groups/, Header: {"Authorization": <auth_type> <auth_token>}
+
+  - Find user by name.
+  - Method: GET, Endpoint: /api/v1/users/?query=<user_name>&page=1, Header: {"Authorization": <auth_type> <auth_token>}
+
+  - If user not found, create one user.
+  - Method: POST, Endpoint: /api/v1/auths/add, Header: {"accept": "application/json", "Authorization": <auth_type> <auth_token>}, Body: {"name": <user_name>,"email": dummy@gmail.com,"password": dummy_pass,"profile_image_url": "/user.png","role": "user"}
+  - If user found: extract id -> <user_uuid>.
+
+Require: Get authorization token (this instruction can be found in database).
+
+-> Output: <user_uuid>
+
+## Step 2: Ensure group exists.
+
+Instruction:
+- Check if group is present.
+- Method: GET, Endpoint: /api/v1/groups/, Header: {"accept": "application/json", "Authorization": <auth_type> <auth_token>}
+- If found: extract id -> <group_id>.
+- If not found, create group.
+
+- Method: POST, Endpoint: /api/v1/groups/create, Header: {"Authorization": <auth_type> <auth_token>, "Content-Type": "application/json"}, Body: {"name": "<group>", "description": "string"}
+
+Response contains id -> <group_id>.
+
+Require: Validate group and get user ID.
+
+-> Output: <group_id>
+
+## Step 3: Add user to group.
+Instruction:
+- Method: POST, Endpoint: /api/v1/groups/id/<group_id>/users/add, Header: {"Authorization": <auth_type> <auth_token>, "Content-Type": "application/json"}, Body: {"user_id":["<user_uuid>"]}
+
+Require: Ensure group exists
+
+-> Output: None
+
+## Step 4: Verify membership
+
+Instruction:
+- Check if <user_uuid> is listed in "user_ids" of <group>.
+- Method: GET, Endpoint: /api/v1/groups/, Header: {"Authorization": <auth_type> <auth_token>, "accept": "application/json"}
+- If <user_uuid> appears in "user_ids", process is successful.
+
+Require: Step 3
+
+-> Output: Success or Failure

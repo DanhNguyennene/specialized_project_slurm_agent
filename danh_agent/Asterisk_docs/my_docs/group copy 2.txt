@@ -1,0 +1,19 @@
+When to use: User wants to check if a user is a member of a group
+Prerequisites:
+
+Must have valid <auth_token> and <auth_type> from Authentication task
+Must know the <user_uuid> to check
+
+Steps:
+
+Get all groups and check membership
+
+Method: GET
+Endpoint: /api/v1/groups/
+Headers: {"Authorization": "<auth_type> <auth_token>", "accept": "application/json"}
+Action: Find the target group and check if <user_uuid> is in the "user_ids" array
+Result: Success if <user_uuid> is present, Failure if not
+
+
+
+Output: Success or Failure status

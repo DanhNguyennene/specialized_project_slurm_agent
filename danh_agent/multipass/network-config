@@ -1,0 +1,4 @@
+version: 2
+ethernets:
+  default:
+    dhcp4: true

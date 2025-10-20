@@ -1,0 +1,10 @@
+my_virtual_env
+environ
+*.log
+model
+*.pyc
+.cache/*
+.env/*
+.venv/*
+.chainlit/*
+DeepSeekFinetune/*

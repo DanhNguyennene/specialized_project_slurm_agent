@@ -1,0 +1,24 @@
+#cloud-config
+package_update: true
+# Skip package_upgrade to save time
+# package_upgrade: true
+
+packages:
+  - python3-pip
+  - docker.io
+  - curl
+  - git
+  - vim
+  # Remove less essential packages for faster setup
+
+groups:
+  - docker
+
+users:
+  - default
+
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - usermod -aG docker ubuntu
+  - echo "Basic setup complete"

@@ -1,0 +1,55 @@
+- install cuda toolkit
+sudo apt install nvidia-cuda-toolkit
+
+- install llamacpp with OpenBLAS / cuBLAS / CLBlast
+CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 pip install llama-cpp-python
+
+- run server:
+python -m llama_cpp.server --model qwq-32b-q4_k_m.gguf --port 8001 --n_gpu_layers 999 --n_ctx 2048
+
+For function calling:
+- Agent can do anything customer wanted to do by execute the implemented function.
+
+- Each function like an API to interact with custoemr product
+
+- The ability of Agent is detirment by the knowlegde it have been learn and the number of function.
+
+- For cirpack the function will be something like:
+
+    + GetConfigSection: Main, DNS, PEER, ...
+    + GetConfigValue: true, false, "abc", 0 < x < 1000
+    + EditConfig: module, Section, value,
+    + EditSippScript: message, header, value
+    + GetSippScript: Context : if none context return the basic call
+    + ExecuteCmd: permisstion, cmd
+    + GetSippCmd: scrtipsName, module
+    + CollectErrorLog: module
+
+=> For now let just using hardcode function define in the prompt. If in the future have more functions, we need to add a Retival technique to reduce context for functionCallingLLM
+
+
+WORK FLOW:
+
+- User put all information
+
+- Retival old information about the testing plan:
+    + For now skip this part. Paste all TR into LLM. ~5TR is enough.
+    + Add 10 TR with same module, and kind of same topic.
+
+- Using LLM, with example context is retrived information. Action is generate new reproduce action need to do for the {problem} by step 1, 2, 3...
+    + Using deepseekR1:32B for now. With the context windows give it's some knowlegde to be able to create a new plan.
+    + In the future, need to fine tune for more accurate plan
+
+- Testing Agent take this plan. Seperate by step. Each step pick some function: 
+    + Write 8 tools
+    + Find the way to execute cmd.
+
+- Get the result from testing Agent, then decide to continue or break.
+    + Using LLM to decide is this reproduced or not.
+
+
+
+=> TO apply on new product what we need:
+    + Testing plan for old bug
+    + Develop functions (API) to interact with the product
+    + If it possible then other CoT dataset for the test plan is really improve the performence.

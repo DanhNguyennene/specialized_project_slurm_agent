@@ -1,0 +1,398 @@
+#ID: 26967 
+
+#bin:
+ibcf 7.2.52
+
+#config:
+[PEER_valid_auto_ext]
+SIP_MANIPULATION[] = SET_ALLOW
+Authorization_profile = 0
+Max_in = 65550
+Max_out = 65550
+Hiding = NO_HIDING
+Media_Profile = 19
+Routing_profile = 0
+behavior = 7
+Trusted = TRUE
+Privacy = FALSE
+Fields_Filtering = NONE
+Domain[] = 192.168.33.33:5022
+
+[ MANIPULATION_RULE_DEL-ALLOW-INSTANCE1 ]
+Instance = "^"
+Action_Type = Del
+Element_Type = HEADER-VALUE
+Header_Name = Allow
+
+[ SIP_MANIPULATION_PROFILE_SET_ALLOW ]
+Manipulation[] = DEL-ALLOW-INSTANCE1
+Applicability = BOTH
+Method_Type[] = "*"
+Message_Type = BOTH
+Strategy = IN
+
+#Message:
+(11:15:05.88) W0 in <192.168.33.157:5681> <- 809 bytes from <192.168.33.163:5022>
+INVITE sip:0167000000@192.168.33.157:5681 SIP/2.0
+To: Called <sip:0167000000@192.168.33.157>
+From: Calling <sip:0166000000@192.168.33.163>;tag=1-1-1
+Via: SIP/2.0/UDP 192.168.33.163:5022;branch=z9hG4bK-13293-1-1
+Call-ID: 1-13293@192.168.33.163
+CSeq: 1 INVITE
+Contact: <sip:192.168.33.163:5022>
+P-Asserted-Identity: <sip:0166000000@192.168.33.163:5022;user=phone>
+Route: <sip:192.168.33.157:5681;lr>
+Max-Forwards: 70
+Allow: REFER,INVITE,INFO,ACK,SUBSCRIBE,UPDATE,REGISTER,BYE,CANCEL
+Content-Type: application/sdp
+Content-Length:   261
+
+v=0
+o=cp10 116221159107 116221159108 IN IP4 192.168.33.163
+s=SIP Call
+c=IN IP4 192.168.33.163
+t=0 0
+m=audio 6350 RTP/AVP 0 18 8
+b=AS:64
+a=rtpmap:0 PCMU/8000/1
+a=rtpmap:8 PCMA/8000/1
+a=rtpmap:18 G729/8000/1
+a=fmtp:18 annexb=no
+a=ptime:20
+a=sendrecv
+
+#ERROR:
+Allow: BYE,CANCEL,INFO,INVITE,REFER,REGISTER,SUBSCRIBE,UPDATE
+
+
+#Step reproduce:
+Step 1: Get the ibcf binary version 7.2.52
+Step 2: Get the basic call sipp scenarial
+Step 3: Modify header initial INVITE the same as provided INVITE message
+Step 4: Config HMR to delete first field in Allow header
+Step 5: Make the basic call between ibcf
+Step 6: Checking out going INVITE allow header is deleted not the first 'allow' value
+######################################################################
+#ID:
+24628 
+
+#bin:
+ibcf 7.2.60
+
+#Config:
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM, tag
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+
+#Message:
+(08:14:09.41) W0 in <10.208.189.17:5060> <- 3991 bytes from <10.208.189.14:5060>
+INVITE sip:+49D0781749490177@sipreg2.ewetel.de;user=phone SIP/2.0
+Call-ID: fdbb820566c142ebe980de659c7ec103@10.208.189.40
+Contact: <sip:+4944135012780@10.208.189.40:5060>
+Content-Type: application/sdp
+CSeq: 7 INVITE
+From: <sip:+4944135012780@sipreg2.voice.ewetel.de;user=phone>;tag=33038721_09ba9498_2bc2794a-788a-4b33-bf00-64d448102706
+Max-Forwards: 63
+Record-Route: <sip:10.208.189.14:5060;user=i0o0S000005b7;lr;Cpkt=CNMKV;C=on-cirpack>
+Route: <sip:10.208.189.17:5060;transport=udp;lr>,<sip:ims1p1.nica.ewetel.de;transport=udp;lr>
+Supported: 100rel,replaces
+To: <sip:+4944180002461@nplcrnat.osp.voice.ewetel.de>
+Via: SIP/2.0/UDP 10.208.189.14:5060;branch=z9hG4bK-CNMK-000010d4-198d2a4d,SIP/2.0/UDP 10.208.189.40:5060;received=10.208.189.40;rport=5060;branch=z9hG4bK2bc2794a-788a-4b33-bf00-64d448102706_09ba9498_7827518534571509
+Accept: application/sdp,multipart/mixed
+Accept-Encoding: identity
+Allow: INVITE,BYE,ACK,OPTIONS,CANCEL,INFO,PRACK,SUBSCRIBE,NOTIFY,REFER,UPDATE,MESSAGE,PUBLISH
+Allow-Events: telephone-event,refer
+Expires: 120
+User-Agent: AVM FRITZ!Box 7590 154.07.29 (Oct 26 2021)
+Session-ID: 05ef8fc121ed9814c6ad31e4cbe74262
+P-Asserted-Identity: <sip:+4944135012780@sipreg2.voice.ewetel.de;user=phone>
+History-info: <sip:+4944180007922@icscf-cl02.ims1.voice.ewetel.de?Privacy=history>;index=1
+History-info: <sip:+49800376462401@sipreg3.voice.ewetel.de;user=phone?Privacy=history&Reason=SIP%3Bcause%3D302%3Btext%3D%22Unconditional%22>;index=1.1
+History-info: <sip:+4944136111397@unknown.invalid;cause=380;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D486&Privacy=history>;index=1.1.1;mp=1.1
+History-info: <sip:+4944136111398@unknown.invalid;cause=486;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.2;mp=1.1
+History-info: <sip:+4944136111394@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D500&Privacy=history>;index=1.1.3;mp=1.1
+History-info: <sip:+4944136111395@unknown.invalid;cause=404;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D500&Privacy=history>;index=1.1.4;mp=1.1
+History-info: <sip:+494413900195@unknown.invalid;cause=404;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.5;mp=1.1
+History-info: <sip:+4944139022692@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.6;mp=1.1
+History-info: <sip:+494413900197@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.7;mp=1.1
+History-info: <sip:+4944139022733@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.8;mp=1.1
+History-info: <sip:+4944139063182@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.9;mp=1.1
+History-info: <sip:+4944199869416@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.10;mp=1.1
+History-info: <sip:+4944199869425@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.11;mp=1.1
+History-info: <sip:+4944199869427@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Privacy=history>;index=1.1.12;mp=1.1
+Content-Length: 376
+
+#ERROR:
+W5 Header History-info : string too long, size=2204, max size=1024
+W0 Apply matching rule HIH_del_REID : false
+
+#Step reproduce:
+Step 1: Get the ibcf binary version 7.2.60
+Step 2: Get the basic call sipp scenarial
+Step 3: Modify header initial INVITE the same as provided INVITE message
+Step 4: Config HMR to delete HIH
+Step 5: Make the basic call between ibcf
+Step 6: Checking error log:
+W5 Header History-info : string too long, size=2204, max size=1024
+
+######################################################################
+#ID:
+26716
+
+#bin:
+ibcf 7.2.65
+
+#Config:
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM, tag
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+
+#ERROR:
+"W0 Apply matching rule HAS_TO_TAG : false"
+ 
+ 
+
+
+
+
+
+Step 1: Get the ibcf binary version 7.2.65
+
+Step 2: Get the B-ReINVITe scenarial
+
+Step 4: Config HMR to detect the 'to tag'
+
+Step 4: Make the basic call between ibcf
+
+Step 5: Checking the log "W0 Apply matching rule HAS_TO_TAG : false"
+
+
+
+
+
+
+PROMPT:
+
+Given 2 example:
+example 1:
+"""<example>
+#ID: 26967 
+
+#bin:
+ibcf 7.2.52
+
+#config:
+[PEER_valid_auto_ext]
+SIP_MANIPULATION[] = SET_ALLOW
+Authorization_profile = 0
+Max_in = 65550
+Max_out = 65550
+Hiding = NO_HIDING
+Media_Profile = 19
+Routing_profile = 0
+behavior = 7
+Trusted = TRUE
+Privacy = FALSE
+Fields_Filtering = NONE
+Domain[] = 192.168.33.33:5022
+
+[ MANIPULATION_RULE_DEL-ALLOW-INSTANCE1 ]
+Instance = "^"
+Action_Type = Del
+Element_Type = HEADER-VALUE
+Header_Name = Allow
+
+[ SIP_MANIPULATION_PROFILE_SET_ALLOW ]
+Manipulation[] = DEL-ALLOW-INSTANCE1
+Applicability = BOTH
+Method_Type[] = "*"
+Message_Type = BOTH
+Strategy = IN
+
+#Message:
+(11:15:05.88) W0 in <192.168.33.157:5681> <- 809 bytes from <192.168.33.163:5022>
+INVITE sip:0167000000@192.168.33.157:5681 SIP/2.0
+To: Called <sip:0167000000@192.168.33.157>
+From: Calling <sip:0166000000@192.168.33.163>;tag=1-1-1
+Via: SIP/2.0/UDP 192.168.33.163:5022;branch=z9hG4bK-13293-1-1
+Call-ID: 1-13293@192.168.33.163
+CSeq: 1 INVITE
+Contact: <sip:192.168.33.163:5022>
+P-Asserted-Identity: <sip:0166000000@192.168.33.163:5022;user=phone>
+Route: <sip:192.168.33.157:5681;lr>
+Max-Forwards: 70
+Allow: REFER,INVITE,INFO,ACK,SUBSCRIBE,UPDATE,REGISTER,BYE,CANCEL
+Content-Type: application/sdp
+Content-Length:   261
+
+v=0
+o=cp10 116221159107 116221159108 IN IP4 192.168.33.163
+s=SIP Call
+c=IN IP4 192.168.33.163
+t=0 0
+m=audio 6350 RTP/AVP 0 18 8
+b=AS:64
+a=rtpmap:0 PCMU/8000/1
+a=rtpmap:8 PCMA/8000/1
+a=rtpmap:18 G729/8000/1
+a=fmtp:18 annexb=no
+a=ptime:20
+a=sendrecv
+
+#ERROR:
+Allow: BYE,CANCEL,INFO,INVITE,REFER,REGISTER,SUBSCRIBE,UPDATE
+
+
+#Step reproduce:
+Step 1: Get the ibcf binary version 7.2.52
+Step 2: Get the basic call sipp scenarial
+Step 3: Modify header initial INVITE the same as provided INVITE message
+Step 4: Config HMR to delete first field in Allow header
+Step 5: Make the basic call between ibcf
+Step 6: Checking out going INVITE allow header is deleted not the first 'allow' value
+</example>"""
+example 2:
+"""<example>
+#ID:
+24628 
+
+#bin:
+ibcf 7.2.60
+
+#Config:
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM, tag
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+
+#Message:
+(08:14:09.41) W0 in <10.208.189.17:5060> <- 3991 bytes from <10.208.189.14:5060>
+INVITE sip:+49D0781749490177@sipreg2.ewetel.de;user=phone SIP/2.0
+Call-ID: fdbb820566c142ebe980de659c7ec103@10.208.189.40
+Contact: <sip:+4944135012780@10.208.189.40:5060>
+Content-Type: application/sdp
+CSeq: 7 INVITE
+From: <sip:+4944135012780@sipreg2.voice.ewetel.de;user=phone>;tag=33038721_09ba9498_2bc2794a-788a-4b33-bf00-64d448102706
+Max-Forwards: 63
+Record-Route: <sip:10.208.189.14:5060;user=i0o0S000005b7;lr;Cpkt=CNMKV;C=on-cirpack>
+Route: <sip:10.208.189.17:5060;transport=udp;lr>,<sip:ims1p1.nica.ewetel.de;transport=udp;lr>
+Supported: 100rel,replaces
+To: <sip:+4944180002461@nplcrnat.osp.voice.ewetel.de>
+Via: SIP/2.0/UDP 10.208.189.14:5060;branch=z9hG4bK-CNMK-000010d4-198d2a4d,SIP/2.0/UDP 10.208.189.40:5060;received=10.208.189.40;rport=5060;branch=z9hG4bK2bc2794a-788a-4b33-bf00-64d448102706_09ba9498_7827518534571509
+Accept: application/sdp,multipart/mixed
+Accept-Encoding: identity
+Allow: INVITE,BYE,ACK,OPTIONS,CANCEL,INFO,PRACK,SUBSCRIBE,NOTIFY,REFER,UPDATE,MESSAGE,PUBLISH
+Allow-Events: telephone-event,refer
+Expires: 120
+User-Agent: AVM FRITZ!Box 7590 154.07.29 (Oct 26 2021)
+Session-ID: 05ef8fc121ed9814c6ad31e4cbe74262
+P-Asserted-Identity: <sip:+4944135012780@sipreg2.voice.ewetel.de;user=phone>
+History-info: <sip:+4944180007922@icscf-cl02.ims1.voice.ewetel.de?Privacy=history>;index=1
+History-info: <sip:+49800376462401@sipreg3.voice.ewetel.de;user=phone?Privacy=history&Reason=SIP%3Bcause%3D302%3Btext%3D%22Unconditional%22>;index=1.1
+History-info: <sip:+4944136111397@unknown.invalid;cause=380;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D486&Privacy=history>;index=1.1.1;mp=1.1
+History-info: <sip:+4944136111398@unknown.invalid;cause=486;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.2;mp=1.1
+History-info: <sip:+4944136111394@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D500&Privacy=history>;index=1.1.3;mp=1.1
+History-info: <sip:+4944136111395@unknown.invalid;cause=404;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D500&Privacy=history>;index=1.1.4;mp=1.1
+History-info: <sip:+494413900195@unknown.invalid;cause=404;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.5;mp=1.1
+History-info: <sip:+4944139022692@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.6;mp=1.1
+History-info: <sip:+494413900197@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.7;mp=1.1
+History-info: <sip:+4944139022733@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.8;mp=1.1
+History-info: <sip:+4944139063182@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.9;mp=1.1
+History-info: <sip:+4944199869416@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.10;mp=1.1
+History-info: <sip:+4944199869425@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Reason=SIP%3Bcause%3D487&Privacy=history>;index=1.1.11;mp=1.1
+History-info: <sip:+4944199869427@unknown.invalid;cause=487;user=phone;target=sip:+49800376462401%40unknown.invalid?Privacy=history>;index=1.1.12;mp=1.1
+Content-Length: 376
+
+#ERROR:
+W5 Header History-info : string too long, size=2204, max size=1024
+W0 Apply matching rule HIH_del_REID : false
+
+#Step reproduce:
+Step 1: Get the ibcf binary version 7.2.60
+Step 2: Get the basic call sipp scenarial
+Step 3: Modify header initial INVITE the same as provided INVITE message
+Step 4: Config HMR to delete HIH
+Step 5: Make the basic call between ibcf
+Step 6: Checking error log:
+W5 Header History-info : string too long, size=2204, max size=1024
+</example>"""
+
+Based on two examples, create a list of step to reproduce the new ERROR:
+"""<problem>
+#ID:
+26716
+
+#bin:
+ibcf 7.2.65
+
+#Config:
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM, tag
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+
+#ERROR:
+"W0 Apply matching rule HAS_TO_TAG : false"
+</problem>"""
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM, tag
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+Matching_Value = "(tag)(.*)"
+
+
+
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+Matching_Value = "(tag)(.*)"
+
+
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM-NAME, tag
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+
+
+[ MATCHING_RULE_HAS_TO_TAG ]
+Header_Name = TO
+Element_Type = HEADER-PARAM-NAME
+Condition_Type = NONE
+Instance = "*"
+Min_Occurrence = 1
+Matching_Value = "(tag)(.*)"

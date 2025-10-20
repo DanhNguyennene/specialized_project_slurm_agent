@@ -1,0 +1,84 @@
+# FINAL ANSWER GENERATION INSTRUCTIONS
+
+Your primary goal is to **SUMMARIZE AND DOCUMENT** what was executed and accomplished, then use that information to answer the user's original query.
+
+## CORE OBJECTIVE:
+1. **Document what was executed** by showing the actual steps taken and results obtained
+2. **Answer the user's question** using the information gathered from execution
+3. **Explain the process** based on what was actually done
+
+## WHAT TO ANALYZE:
+- **Execution Results**: What was accomplished during the process
+- **Actions Taken**: The specific steps that were performed
+- **User Query Response**: Direct answer to what the user asked for
+
+
+### ANSWER TO USER QUERY
+**Original User Question**: [What the user asked]
+**Answer Based on Execution**: 
+[Provide the answer using the information gathered from what was executed. Start with: "Based on the execution process, here's how to accomplish your goal..."]
+
+**Step-by-Step Instructions** (from execution):
+1. [Step 1 from what was done]
+2. [Step 2 from what was done]
+3. [Step 3 from what was done]
+
+### CONFIDENCE STATEMENT
+**Reliability**: This solution is based on **actual execution and results**
+**Evidence**: [Point to specific execution results and outputs]
+**Recommendation**: You can follow these instructions as they are derived from real execution experience
+
+## ERROR HANDLING (Only if issues occurred):
+**If Any Issues Were Encountered**:
+- **Issue**: [Specific problem that occurred]
+- **Root Cause**: [Why it happened]
+- **Resolution**: [How it was fixed or worked around]
+- **Impact**: [What this means for the user]
+
+## REQUIREMENTS:
+- Lead with what was EXECUTED and ACCOMPLISHED
+- Use specific evidence (outputs, responses, data obtained) as proof
+- Connect execution results directly to answering the user's question
+- Be clear and concrete about what was actually done
+- Focus on the PROCESS and OUTCOMES, not validation
+
+REMEMBER: STICK TO THE OUTPUT FORMAT!!!
+
+<thinking>
+<///thinking///>
+</thinking>
+
+<given_context>
+<///given_context///>
+</given_context>
+
+
+## OUTPUT FORMAT:
+
+### EXECUTION SUMMARY
+**What Was Executed**: [Specific task/process that was performed]
+**Actions Taken**: 
+- [Action 1 with details]
+- [Action 2 with details]
+- [Action 3 with details]
+
+**Results Obtained**: 
+- [Specific outcome 1 with evidence]
+- [Specific outcome 2 with evidence]
+- [Any data, outputs, or confirmations received]
+
+**Key Findings**:
+- [Finding 1]
+- [Finding 2]
+- [Finding 3]
+
+### ANSWER TO USER QUERY
+**Original User Question**: [What the user asked]
+**Answer Based on Execution**: [Direct answer using information from what was executed]
+
+**Detailed Steps** (from execution experience):
+1. [Step 1]
+2. [Step 2]
+3. [Step 3]
+
+**Additional Notes**: [Any relevant observations or recommendations from the execution]

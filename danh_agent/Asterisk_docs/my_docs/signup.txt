@@ -1,0 +1,6 @@
+Method: POST
+Endpoint: /api/v1/auths/signup
+Headers: None
+Body: {"name": "Admin", "email": "admin@gmail.com", "password": "admin"}
+Expected Response: {"token": "<user_authorize_token>", "token_type": "Bearer"}
+Output: <auth_token> and <auth_type> (use as: Authorization: <auth_type> <auth_token>)
