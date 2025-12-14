@@ -1,230 +1,502 @@
-"""FastAPI Server with LangGraph Agent"""
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi import status as fastapi_status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
-from datetime import datetime, timedelta
-
+"""
+FastAPI Server for Slurm Agent with OpenAI SDK
+Clean, simple API for cluster management
+"""
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import uvicorn
-import os
+import json
+import logging
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-# from agent import Agent
-from flow.agent_v2 import VMAgent, OLLAMA_MODEL, BASE_OLLAMA_URL, ChatOllama, generate_vm_agent_streaming_completion
-from fastapi import Request
 
-# Global agent instance
+from flow.slurm_agent import SlurmAgent
+from flow.slurm_structured_agent import SlurmStructuredAgent
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Global agents
 agent = None
+structured_agent = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
-    global agent
+    """Lifecycle management"""
+    global agent, structured_agent
     try:
-        # # Get environment variables for configuration
-        # chromadb_host = os.getenv("CHROMADB_HOST", "localhost")
-        # chromadb_port = int(os.getenv("CHROMADB_PORT", "8001"))
-        # ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        
-        model = ChatOllama(
-            model=OLLAMA_MODEL,  # or "qwen2.5", "mistral", etc.
-            base_url=BASE_OLLAMA_URL,  # default Ollama URL
-            temperature=0
+        # Initialize traditional tool-calling agent
+        agent = SlurmAgent(
+            model="qwen2.5:7b",
+            temperature=0.0,
+            max_iterations=10,
+            parallel_tool_calls=True
         )
-        agent = VMAgent(model)
-        print("Agent initialized successfully")
+        logger.info(f"Tool-calling agent initialized: {agent.client.model}")
+        
+        # Initialize structured output agent
+        structured_agent = SlurmStructuredAgent(
+            model="qwen2.5:7b",
+            temperature=0.0
+        )
+        logger.info(f"Structured agent initialized: {structured_agent.client.model}")
+        
     except Exception as e:
-        print(f"Failed to initialize agent: {e}")
+        logger.error(f"Failed to initialize agents: {e}")
         raise
     
     yield
     
-    # Shutdown
-    print("Shutting down agent")
+    logger.info("Shutting down agents")
+    if structured_agent and structured_agent.connection.connected:
+        await structured_agent.connection.disconnect()
+
 
 app = FastAPI(
-    title="LangGraph Agent API",
-    description="An AI agent built with LangGraph, MCP tools, and Ollama",
-    version="1.0.0",
+    title="Slurm Agent API",
+    description="AI agent for Slurm cluster management using OpenAI SDK",
+    version="2.0.0",
     lifespan=lifespan
 )
 
-@app.get("/")
-async def root():
-    return {"message": "LangGraph Agent API is running"}
 
-@app.get("/health", tags=["agent"])
-async def health_check():
-    return {"status": "healthy", "agent_ready": agent is not None}
+class ChatMessage(BaseModel):
+    role: str
+    content: str
 
-class ChatResponse(BaseModel):
-    model: str = "tma_agent_007"
-    created_at: str
-    message: Dict[str, Any]
-    done_reason: Optional[str] = "stop"
-    done: bool = True
 
 class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
     stream: bool = False
-import json
-@app.post("/chat", tags=["agent"])
-async def chat(request: Request):
-    try:
-        # Fix the JSON parsing issue
-        body = await request.body()
-        body_str = body.decode('utf-8')
-        
-        try:
-            payload = json.loads(body_str)
-            # If payload is a string, it's double-encoded
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-        except json.JSONDecodeError as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
-        
-        stream = payload.get("stream", True)
-        print(f"Received chat request with stream={stream}")
-
-        if not agent:
-            raise HTTPException(status_code=503, detail="Agent not initialized")
-        
-        messages = payload.get("messages", [])
-        if not messages:
-            raise HTTPException(status_code=400, detail="No messages provided")
-        
-        last_message = messages[-1]
-        task = last_message.get("task", "chat")
-        
-        if task == "chat" and stream:
-            return await generate_vm_agent_streaming_completion(
-                user_input=messages, 
-                thread_id=payload.get("thread_id", "default-agent")
-            )
-        else:
-            # Non-streaming response
-            response = await agent.generate_answer_exclusive(
-                user_input=messages, 
-                thread_id=payload.get("thread_id", "default-agent")
-            )
-            
-            message_format = {
-                "role": "assistant",
-                "content": response['content'],
-                "thinking": response.get("thinking", ""),
-                "tool_calls": response.get("tool_calls", []),
-                'task': task,
-            }
-            
-            current_time = datetime.now(timezone.utc)
-            created_at = current_time.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-            
-            return ChatResponse(
-                model="tma_agent_007",
-                created_at=created_at,
-                message=message_format,
-                done_reason="stop",
-                done=True
-            )
-
-    except Exception as e:
-        print(f"ERROR in chat endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
-#region Authorization
+class ChatResponse(BaseModel):
+    success: bool
+    content: str
+    tool_calls: List[Dict[str, Any]] = []
 
-#########################################################################
-#                                                                       #
-#       Authorize Admin for access to Database and server status        #
-#                                                                       #
-#########################################################################
 
-SECRET_KEY = "your-secret-key"      # change in production
-ALGORITHM = "HS256"                 # change in production
-ACCESS_TOKEN_EXPIRE_MINUTES = 2.5   # admin access to update chroma database
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class User(BaseModel):
-    username: str
-    role: str  # e.g., "admin" or "user"
-
-in_memory_users_db = {
-    "adminuser": {
-        "username": "adminuser",
-        "password": "adminpass",  # In production, use hashed passwords
-        "role": "admin"
-    },
-    "regularuser": {
-        "username": "regularuser",
-        "password": "userpass",
-        "role": "user"
+@app.get("/")
+async def root():
+    return {
+        "message": "Slurm Agent API",
+        "version": "2.0.0",
+        "framework": "OpenAI SDK + Ollama",
+        "status": "running"
     }
-}
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=fastapi_status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+@app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "agent_ready": agent is not None
+    }
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(request: ChatRequest):
+    """
+    Chat with the Slurm agent
+    
+    Send messages to interact with Slurm cluster.
+    The agent will use tools as needed.
+    """
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="No messages provided")
+    
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise credentials_exception
-    except JWTError:
-        raise credentials_exception
-    user = in_memory_users_db.get(username)
-    if user is None:
-        raise credentials_exception
-    return User(**user)
-
-async def get_current_admin(current_user: User = Depends(get_current_user)):
-    if current_user.role != "admin":
-        raise HTTPException(
-            status_code=fastapi_status.HTTP_403_FORBIDDEN,
-            detail="Not enough permissions"
+        # Convert Pydantic models to dicts
+        messages = [msg.model_dump() for msg in request.messages]
+        
+        # Execute agent
+        result = await agent.chat(messages)
+        
+        return ChatResponse(
+            success=result.get("success", True),
+            content=result.get("content", ""),
+            tool_calls=result.get("tool_calls", [])
         )
-    return current_user
+        
+    except Exception as e:
+        logger.error(f"Chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-# Token endpoint for login
-@app.post("/token", response_model=Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = in_memory_users_db.get(form_data.username)
-    if not user or user["password"] != form_data.password:
-        raise HTTPException(
-            status_code=fastapi_status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user["username"]}, expires_delta=access_token_expires
+@app.post("/simple")
+async def simple_chat(message: str):
+    """
+    Simple single-message interaction
+    
+    Quick way to send a single request without conversation history
+    """
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    
+    try:
+        result = await agent.run(message)
+        
+        return {
+            "success": result.get("success", True),
+            "content": result.get("content", ""),
+            "tool_calls": result.get("tool_calls", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Simple chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/stream")
+async def stream_chat(request: ChatRequest):
+    """
+    Streaming chat response
+    
+    Returns Server-Sent Events with incremental updates
+    """
+    if not agent:
+        raise HTTPException(status_code=503, detail="Agent not initialized")
+    
+    async def generate():
+        try:
+            messages = [msg.model_dump() for msg in request.messages]
+            
+            # Send status
+            yield f"data: {json.dumps({'type': 'status', 'content': 'Processing request...'})}\n\n"
+            
+            # Execute agent
+            result = await agent.chat(messages)
+            
+            # Stream tool calls
+            if result.get("tool_calls"):
+                for tool_call in result["tool_calls"]:
+                    yield f"data: {json.dumps({'type': 'tool', 'content': tool_call})}\n\n"
+            
+            # Stream final response
+            yield f"data: {json.dumps({'type': 'response', 'content': result.get('content', ''), 'done': True})}\n\n"
+            
+        except Exception as e:
+            logger.error(f"Streaming error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream"
     )
-    return {"access_token": access_token, "token_type": "bearer"}
-
-#endregion
 
 
-#region Main App run
+@app.get("/tools")
+async def list_tools():
+    """List available Slurm tools"""
+    from utils.slurm_tools import SLURM_TOOLS
+    
+    return {
+        "tools": [
+            {
+                "name": tool["function"]["name"],
+                "description": tool["function"]["description"]
+            }
+            for tool in SLURM_TOOLS
+        ]
+    }
+
+
+@app.post("/execute_tool")
+async def execute_tool_direct(tool_name: str, arguments: Dict[str, Any]):
+    """
+    Direct tool execution without agent
+    
+    Useful for testing or direct Slurm commands
+    """
+    try:
+        from utils.slurm_tools import execute_tool
+        
+        result = await execute_tool(tool_name, arguments)
+        
+        return {
+            "success": True,
+            "tool": tool_name,
+            "result": json.loads(result) if isinstance(result, str) else result
+        }
+        
+    except Exception as e:
+        logger.error(f"Tool execution error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/structured")
+async def chat_structured(request: ChatRequest):
+    """
+    Chat with structured Pydantic output
+    
+    Example: Get job information in a structured format
+    """
+    try:
+        from pydantic import BaseModel
+        
+        # Define structure for job info
+        class JobSummary(BaseModel):
+            total_jobs: int
+            running: int
+            pending: int
+            summary: str
+        
+        result = await agent.client.chat_structured(
+            messages=[{"role": "system", "content": agent.SYSTEM_PROMPT}] + 
+                     [{"role": m.role, "content": m.content} for m in request.messages],
+            response_format=JobSummary
+        )
+        
+        return {
+            "success": True,
+            "structured_output": result.model_dump(),
+            "type": "JobSummary"
+        }
+        
+    except Exception as e:
+        logger.error(f"Structured chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/parallel")
+async def chat_parallel_tools(request: ChatRequest):
+    """
+    Chat with parallel tool calls enabled
+    
+    Can execute multiple Slurm commands simultaneously
+    """
+    try:
+        from utils.slurm_tools import SLURM_TOOLS
+        
+        result = await agent.client.chat_with_tools(
+            messages=[{"role": "system", "content": agent.SYSTEM_PROMPT}] + 
+                     [{"role": m.role, "content": m.content} for m in request.messages],
+            tools=SLURM_TOOLS,
+            parallel_tool_calls=True
+        )
+        
+        return {
+            "success": True,
+            "content": result["content"],
+            "tool_calls": result["tool_calls"],
+            "usage": result["usage"],
+            "parallel": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Parallel chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/chat/logprobs")
+async def chat_with_logprobs(request: ChatRequest, top_n: int = 5):
+    """
+    Chat with log probabilities
+    
+    Returns token-level probabilities for debugging/analysis
+    """
+    try:
+        result = await agent.client.chat_with_logprobs(
+            messages=[{"role": "system", "content": agent.SYSTEM_PROMPT}] + 
+                     [{"role": m.role, "content": m.content} for m in request.messages],
+            top_logprobs=top_n
+        )
+        
+        return {
+            "success": True,
+            "content": result["content"],
+            "logprobs": result["logprobs"],
+            "usage": result["usage"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Logprobs chat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/features")
+async def list_features():
+    """
+    List all enhanced OpenAI API features available
+    """
+    return {
+        "features": {
+            "structured_outputs": {
+                "description": "Pydantic model-based structured responses",
+                "endpoint": "/chat/structured"
+            },
+            "structured_agent": {
+                "description": "Agent generates Slurm command sequences as structured JSON",
+                "endpoints": {
+                    "plan": "/slurm/plan",
+                    "execute": "/slurm/execute",
+                    "approve": "/slurm/approve"
+                }
+            },
+            "parallel_tool_calls": {
+                "description": "Execute multiple Slurm commands simultaneously",
+                "endpoint": "/chat/parallel"
+            },
+            "streaming": {
+                "description": "Stream responses with delta accumulation",
+                "endpoint": "/stream"
+            },
+            "logprobs": {
+                "description": "Token-level log probabilities",
+                "endpoint": "/chat/logprobs"
+            },
+            "tool_choice": {
+                "description": "Control tool calling behavior (auto/required/none/specific)",
+                "note": "Use tool_choice parameter in chat requests"
+            },
+            "advanced_params": {
+                "description": "Temperature, top_p, frequency_penalty, presence_penalty, seed",
+                "note": "Configure via agent initialization"
+            },
+            "usage_tracking": {
+                "description": "Detailed token usage statistics",
+                "note": "Included in all tool call responses"
+            }
+        },
+        "client_version": "2.0.0",
+        "agents": {
+            "tool_calling": agent.client.model if agent else None,
+            "structured": structured_agent.client.model if structured_agent else None
+        }
+    }
+
+
+# ===== STRUCTURED AGENT ENDPOINTS =====
+
+class SlurmPlanRequest(BaseModel):
+    message: str
+    conversation_history: Optional[List[ChatMessage]] = None
+
+
+class SlurmExecuteRequest(BaseModel):
+    message: str
+    conversation_history: Optional[List[ChatMessage]] = None
+
+
+class SlurmApproveRequest(BaseModel):
+    sequence: Dict[str, Any]  # SlurmCommandSequence as dict
+
+
+@app.post("/slurm/plan")
+async def plan_slurm_commands(request: SlurmPlanRequest):
+    """
+    Generate Slurm command sequence without execution
+    
+    Returns structured plan for review/approval
+    """
+    if not structured_agent:
+        raise HTTPException(status_code=503, detail="Structured agent not initialized")
+    
+    try:
+        history = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else None
+        
+        result = await structured_agent.plan_only(
+            user_message=request.message,
+            conversation_history=history
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Plan generation failed"))
+        
+        return {
+            "success": True,
+            "sequence": result["sequence"],
+            "plan_message": result.get("final_message", ""),
+            "note": "Review the plan and use /slurm/approve to execute"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Plan generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/slurm/execute")
+async def execute_slurm_commands(request: SlurmExecuteRequest):
+    """
+    Generate and execute Slurm command sequence
+    
+    One-shot: plan generation + execution
+    """
+    if not structured_agent:
+        raise HTTPException(status_code=503, detail="Structured agent not initialized")
+    
+    try:
+        history = [msg.model_dump() for msg in request.conversation_history] if request.conversation_history else None
+        
+        result = await structured_agent.run(
+            user_message=request.message,
+            conversation_history=history,
+            execute=True
+        )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Execution failed"))
+        
+        return {
+            "success": True,
+            "sequence": result["sequence"],
+            "executed": result.get("executed", False),
+            "execution_summary": result.get("execution_summary", {}),
+            "execution_results": result.get("execution_results", []),
+            "message": result.get("final_message", "")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Execution error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/slurm/approve")
+async def approve_and_execute(request: SlurmApproveRequest):
+    """
+    Execute a previously generated command sequence
+    
+    Use this after reviewing plan from /slurm/plan
+    """
+    if not structured_agent:
+        raise HTTPException(status_code=503, detail="Structured agent not initialized")
+    
+    try:
+        # Import here to avoid circular import
+        from utils.slurm_commands import SlurmCommandSequence
+        
+        # Parse sequence from dict
+        sequence = SlurmCommandSequence(**request.sequence)
+        
+        result = await structured_agent.execute_sequence(sequence)
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=500, detail=result.get("error", "Execution failed"))
+        
+        return {
+            "success": True,
+            "execution_summary": result.get("execution_summary", {}),
+            "execution_results": result.get("execution_results", []),
+            "message": result.get("final_message", "")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Approve and execute error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
