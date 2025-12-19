@@ -484,10 +484,10 @@ async def generate_chat_completion(
         message["task"] = task
     print(f"Payload: {payload}")
     res =  await send_post_request(
-        url="/chat",
+        url="/v1/chat/completions",  # Use the streaming endpoint
         payload=json.dumps(payload),
         stream=form_data.stream,
-        content_type="application/x-ndjson",
+        content_type="application/json",  # Standard JSON content type
         user=user,
     )
     print(f"Response: {res}")
@@ -557,55 +557,32 @@ async def send_post_request(
                             chunk_text = chunk.decode('utf-8', errors='ignore')
                             buffer += chunk_text
                             
-                            # Process complete lines
-                            while '\n' in buffer:
-                                line, buffer = buffer.split('\n', 1)
-                                if line.strip():
-                                    print(f"DEBUG: Received chunk: {line[:100]}...")
+                            # Process complete SSE events (split by double newline)
+                            while '\n\n' in buffer:
+                                event, buffer = buffer.split('\n\n', 1)
+                                event = event.strip()
+                                if event:
+                                    print(f"DEBUG: SSE event: {event[:100]}...")
                                     
-                                    # If it's already a proper SSE format, forward it
-                                    if line.startswith('data: '):
-                                        yield f"{line}\n"
+                                    # Forward the event as-is if it's already SSE format
+                                    if event.startswith('data: '):
+                                        yield f"{event}\n\n"
                                     else:
-                                        # Try to parse as JSON and convert to SSE
-                                        try:
-                                            data = json.loads(line)
-                                            yield f"data: {json.dumps(data)}\n"
-                                        except json.JSONDecodeError:
-                                            # Forward as plain text in SSE format
-                                            chunk_data = {
-                                                "id": "chunk",
-                                                "object": "chat.completion.chunk",
-                                                "created": int(time.time()),
-                                                "model": "tma_agent_007",
-                                                "choices": [{
-                                                    "index": 0,
-                                                    "delta": {"content": line},
-                                                    "finish_reason": None
-                                                }]
-                                            }
-                                            yield f"data: {json.dumps(chunk_data)}\n"
-                                yield "\n"  # Empty line for SSE format
+                                        # Wrap in SSE format
+                                        yield f"data: {event}\n\n"
                         
                         # Process any remaining buffer
                         if buffer.strip():
-                            print(f"DEBUG: Final buffer: {buffer}")
-                            try:
-                                data = json.loads(buffer)
-                                yield f"data: {json.dumps(data)}\n\n"
-                            except json.JSONDecodeError:
-                                chunk_data = {
-                                    "id": "final",
-                                    "object": "chat.completion.chunk",
-                                    "created": int(time.time()),
-                                    "model": "tma_agent_007",
-                                    "choices": [{
-                                        "index": 0,
-                                        "delta": {"content": buffer},
-                                        "finish_reason": "stop"
-                                    }]
-                                }
-                                yield f"data: {json.dumps(chunk_data)}\n\n"
+                            event = buffer.strip()
+                            print(f"DEBUG: Final buffer: {event}")
+                            if event.startswith('data: '):
+                                yield f"{event}\n\n"
+                            else:
+                                yield f"data: {event}\n\n"
+                        
+                        # Send [DONE] signal to end the stream (required by OpenWebUI)
+                        yield "data: [DONE]\n\n"
+                        print("DEBUG: Stream complete, sent [DONE]")
                     else:
                         # Non-streaming response
                         data = await response.json()
