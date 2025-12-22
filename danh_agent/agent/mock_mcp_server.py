@@ -560,6 +560,7 @@ class MockSlurmMCPServer:
             "scontrol_requeue": self.handle_scontrol_requeue,
             "sstat": self.handle_sstat,
             "sdiag": self.handle_sdiag,
+            "run_analysis": self.handle_run_analysis,
         }
         
         handler = handlers.get(tool_name)
@@ -826,6 +827,48 @@ class MockSlurmMCPServer:
             "jobs_failed": 20,
             "scheduler_cycle_last": "0.05s",
         }
+    
+    async def handle_run_analysis(self, args: dict) -> dict:
+        """Run analysis script (mock - returns simulated output based on scenario)"""
+        script = args.get("script", "")
+        
+        # For mock, generate realistic output based on current scenario data
+        output_lines = [
+            "==========================================",
+            "ANALYSIS REPORT (Mock)",
+            f"Generated: {datetime.now().isoformat()}",
+            "==========================================",
+            "",
+        ]
+        
+        # Add job summary
+        running = len([j for j in self.jobs.values() if j.get("state") == "RUNNING"])
+        pending = len([j for j in self.jobs.values() if j.get("state") == "PENDING"])
+        output_lines.append(f"=== JOB SUMMARY ===")
+        output_lines.append(f"Running jobs: {running}")
+        output_lines.append(f"Pending jobs: {pending}")
+        output_lines.append(f"Total in queue: {len(self.jobs)}")
+        output_lines.append("")
+        
+        # Add node summary
+        idle = len([n for n in self.nodes.values() if n.get("state") == "IDLE"])
+        alloc = len([n for n in self.nodes.values() if n.get("state") == "ALLOCATED"])
+        down = len([n for n in self.nodes.values() if n.get("state") in ["DOWN", "DRAIN"]])
+        output_lines.append(f"=== NODE SUMMARY ===")
+        output_lines.append(f"Idle nodes: {idle}")
+        output_lines.append(f"Allocated nodes: {alloc}")
+        output_lines.append(f"Down/Drain nodes: {down}")
+        output_lines.append(f"Total nodes: {len(self.nodes)}")
+        output_lines.append("")
+        
+        # Add recent job history
+        failed = [j for j in self.job_history if j.get("state") in ["FAILED", "TIMEOUT", "OUT_OF_MEMORY"]]
+        output_lines.append(f"=== RECENT FAILURES ===")
+        output_lines.append(f"Failed jobs (last 7 days): {len(failed)}")
+        for job in failed[:5]:
+            output_lines.append(f"  - {job.get('job_id')}: {job.get('name')} ({job.get('state')})")
+        
+        return {"output": "\n".join(output_lines), "success": True}
 
 
 async def handle_connection(websocket, server: MockSlurmMCPServer):
@@ -848,7 +891,7 @@ async def handle_connection(websocket, server: MockSlurmMCPServer):
                     tool_args = params.get("arguments", {})
                     
                     logger.info(f"📥 {tool_name} <- {tool_args}")
-                    
+                        
                     result = await server.handle_tool(tool_name, tool_args)
                     
                     logger.info(f"📤 {tool_name} -> OK")

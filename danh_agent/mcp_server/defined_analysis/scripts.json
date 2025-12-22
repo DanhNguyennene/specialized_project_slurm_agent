@@ -1,0 +1,37 @@
+{
+  "analyze_my_jobs": {
+    "name": "Full Job Analysis",
+    "description": "Comprehensive analysis of user's current and recent jobs - shows running, pending, completed, and failed jobs with details",
+    "category": "jobs"
+  },
+  "analyze_failed_jobs": {
+    "name": "Failed Jobs Deep Analysis", 
+    "description": "Deep analysis of failed, timed out, and OOM jobs - identifies patterns and common failure reasons",
+    "category": "debug"
+  },
+  "analyze_pending_jobs": {
+    "name": "Pending Jobs Analysis",
+    "description": "Analyzes why jobs are pending - checks resource availability, queue position, and gives wait time estimates",
+    "category": "debug"
+  },
+  "analyze_cluster_status": {
+    "name": "Full Cluster Status",
+    "description": "Complete cluster status - all partitions, nodes, resource utilization, and availability",
+    "category": "cluster"
+  },
+  "analyze_gpu_resources": {
+    "name": "GPU Resources Analysis",
+    "description": "Detailed GPU availability and usage - shows which GPUs are free, allocated, and queue depth for GPU jobs",
+    "category": "cluster"
+  },
+  "analyze_my_usage": {
+    "name": "My Usage Statistics",
+    "description": "Complete usage statistics - job history, resource consumption, fair share standing, efficiency metrics",
+    "category": "user"
+  },
+  "analyze_my_efficiency": {
+    "name": "Job Efficiency Analysis",
+    "description": "Analyzes job efficiency - are you requesting too much memory, too much time, wasting resources?",
+    "category": "user"
+  }
+}

@@ -1,7 +1,0 @@
-Step 1: Get the ibcf binary version 7.2.65
-Step 2: Get the basic call sipp scenarial
-Step 3: Add TO header with values
-Step 4: Config HMR to apply matching rule HAS_TO_TAG
-Step 5: Make a basic call between ibcf
-Step 6: Checking error log 
-</end>

@@ -226,9 +226,9 @@ async def get_all_models(request: Request, user: UserModel) -> dict[str, list]:
     # return {"data": ["agent_007"]}
     return {"data": 
             [{
-            'id': 'tma_agent_007', 'object': 'model', 'created': 7, 
-            'owned_by': 'tma', 'connection_type': 'external', 'name': 'agent_007', 
-            'tma_agent': {'id': 'tma_agent_007', 'object': 'model', 'created': 7, 'owned_by': 'tma', 'connection_type': 'external'}, 
+            'id': 'BK_Slurm Agent', 'object': 'model', 'created': 7, 
+            'owned_by': 'tma', 'connection_type': 'external', 'name': 'Slurm Agent', 
+            'BK_Slurm Agent': {'id': 'BK_Slurm Agent', 'object': 'model', 'created': 7, 'owned_by': 'tma', 'connection_type': 'external'}, 
             'urlIdx': 0
             }]
             }
@@ -362,7 +362,7 @@ async def verify_connection(
                         "id": "007",
                         "object": "model",
                         "created": 0000000000,
-                        "owned_by": "tma"
+                        "owned_by": "BK"
                     }
                 ]
             }
@@ -384,19 +384,8 @@ class ChatMessage(BaseModel):
     tool_calls: Optional[list[dict]] = None
     images: Optional[list[str]] = None
     task: Optional[str] = "chat"  # Default to "chat"
-
-    @validator("content", pre=True)
-    @classmethod
-    def check_at_least_one_field(cls, field_value, values, **kwargs):
-        # Raise an error if both 'content' and 'tool_calls' are None
-        if field_value is None and (
-            "tool_calls" not in values or values["tool_calls"] is None
-        ):
-            raise ValueError(
-                "At least one of 'content' or 'tool_calls' must be provided"
-            )
-
-        return field_value
+    
+    model_config = ConfigDict(extra="allow")  # Allow extra fields from OpenWebUI
     
 class GenerateChatCompletionForm(BaseModel):
     model: str
@@ -439,6 +428,11 @@ async def generate_chat_completion(
         del payload["metadata"]
 
     model_id = payload["model"]
+    
+    # BK_Slurm Agent is a virtual model - bypass database lookup
+    if model_id == "BK_Slurm Agent":
+        bypass_filter = True
+    
     model_info = Models.get_model_by_id(model_id)
 
     if model_info:
@@ -471,15 +465,25 @@ async def generate_chat_completion(
                 status_code=403,
                 detail="Model not found",
             )
-    payload["model"] = "tma_agent_007"
+    payload["model"] = "BK_Slurm Agent"
     # return {
-    #     'model': 'tma_agent_007',
+    #     'model': 'BK_Slurm Agent',
     #     'created_at': '2025-07-24T14:55:04.611116099Z',
     #     'message': {'role': 'assistant', 'content': 'Hi'},
     #     'done_reason': 'load',
     #     'done': True
     # }
     task = metadata.get("task", "chat")
+    
+    # Forward chat_id to agent for session management
+    chat_id = metadata.get("chat_id") if metadata else None
+    if chat_id:
+        payload["chat_id"] = chat_id
+    
+    # Also forward user_id for fallback session tracking
+    if user and user.id:
+        payload["user_id"] = user.id
+    
     for message in payload.get("messages"):
         message["task"] = task
     print(f"Payload: {payload}")
@@ -535,7 +539,7 @@ async def send_post_request(
                             "id": "error",
                             "object": "chat.completion.chunk",
                             "created": int(time.time()),
-                            "model": "tma_agent_007",
+                            "model": "BK_agent_007",
                             "choices": [{
                                 "index": 0,
                                 "delta": {
@@ -595,7 +599,7 @@ async def send_post_request(
                 "id": "error", 
                 "object": "chat.completion.chunk",
                 "created": int(time.time()),
-                "model": "tma_agent_007",
+                "model": "BK_agent_007",
                 "choices": [{
                     "index": 0,
                     "delta": {

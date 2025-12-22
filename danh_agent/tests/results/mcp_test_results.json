@@ -1,0 +1,506 @@
+{
+  "name": "MCP Tool Tests",
+  "timestamp": "2025-12-21T17:29:46.952170",
+  "summary": {
+    "total": 44,
+    "passed": 44,
+    "failed": 0,
+    "pass_rate": 100.0,
+    "avg_latency_ms": 0.3,
+    "min_latency_ms": 0.2,
+    "max_latency_ms": 0.5
+  },
+  "by_category": {
+    "query": {
+      "passed": 18,
+      "failed": 0,
+      "total": 18,
+      "pass_rate": 100.0,
+      "avg_latency_ms": 0.2
+    },
+    "analysis": {
+      "passed": 5,
+      "failed": 0,
+      "total": 5,
+      "pass_rate": 100.0,
+      "avg_latency_ms": 0.2
+    },
+    "accounting": {
+      "passed": 5,
+      "failed": 0,
+      "total": 5,
+      "pass_rate": 100.0,
+      "avg_latency_ms": 0.4
+    },
+    "action": {
+      "passed": 6,
+      "failed": 0,
+      "total": 6,
+      "pass_rate": 100.0,
+      "avg_latency_ms": 0.3
+    },
+    "interactive": {
+      "passed": 2,
+      "failed": 0,
+      "total": 2,
+      "pass_rate": 100.0,
+      "avg_latency_ms": 0.3
+    },
+    "admin": {
+      "passed": 5,
+      "failed": 0,
+      "total": 5,
+      "pass_rate": 100.0,
+      "avg_latency_ms": 0.2
+    },
+    "edge_case": {
+      "passed": 3,
+      "failed": 0,
+      "total": 3,
+      "pass_rate": 100.0,
+      "avg_latency_ms": 0.2
+    }
+  },
+  "results": [
+    {
+      "test_id": "mcp_001",
+      "tool_name": "squeue",
+      "category": "query",
+      "description": "squeue - no params",
+      "passed": true,
+      "latency_ms": 0.5379140020522755,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n1001|train_model_v1|R|02:30:15|2|16|32G|gpu|alice\\n1002|data_preprocess|R|00:45:22|1|8|16G|cpu|bob\\n1003|in"
+    },
+    {
+      "test_id": "mcp_002",
+      "tool_name": "squeue",
+      "category": "query",
+      "description": "squeue - filter by user",
+      "passed": true,
+      "latency_ms": 0.489697002194589,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n1001|train_model_v1|R|02:30:15|2|16|32G|gpu|alice\\n1003|inference_batch|R|01:12:08|1|4|8G|gpu|alice'}], 'is"
+    },
+    {
+      "test_id": "mcp_003",
+      "tool_name": "squeue",
+      "category": "query",
+      "description": "squeue - filter by partition",
+      "passed": true,
+      "latency_ms": 0.23805700038792565,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n1001|train_model_v1|R|02:30:15|2|16|32G|gpu|alice\\n1003|inference_batch|R|01:12:08|1|4|8G|gpu|alice'}], 'is"
+    },
+    {
+      "test_id": "mcp_004",
+      "tool_name": "squeue",
+      "category": "query",
+      "description": "squeue - filter by state RUNNING",
+      "passed": true,
+      "latency_ms": 0.20319899704190902,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n1001|train_model_v1|R|02:30:15|2|16|32G|gpu|alice\\n1002|data_preprocess|R|00:45:22|1|8|16G|cpu|bob\\n1003|in"
+    },
+    {
+      "test_id": "mcp_005",
+      "tool_name": "squeue",
+      "category": "query",
+      "description": "squeue - filter by state PENDING",
+      "passed": true,
+      "latency_ms": 0.20331300038378686,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n1004|analysis_job|PD|0:00|1|4|4G|cpu|charlie'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_006",
+      "tool_name": "squeue",
+      "category": "query",
+      "description": "squeue - filter by job_id",
+      "passed": true,
+      "latency_ms": 0.1778999976522755,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_007",
+      "tool_name": "squeue",
+      "category": "query",
+      "description": "squeue - multiple filters",
+      "passed": true,
+      "latency_ms": 0.17729899991536513,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n1001|train_model_v1|R|02:30:15|2|16|32G|gpu|alice\\n1003|inference_batch|R|01:12:08|1|4|8G|gpu|alice'}], 'is"
+    },
+    {
+      "test_id": "mcp_008",
+      "tool_name": "sinfo",
+      "category": "query",
+      "description": "sinfo - no params",
+      "passed": true,
+      "latency_ms": 0.17799399938667193,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'PARTITION   AVAIL  TIMELIMIT  NODES  STATE  NODELIST\\ngpu         up     infinite       1  idle   gpu-node-01\\ngpu         up     infinite       1  alloc  gpu-no"
+    },
+    {
+      "test_id": "mcp_009",
+      "tool_name": "sinfo",
+      "category": "query",
+      "description": "sinfo - filter by partition",
+      "passed": true,
+      "latency_ms": 0.1799890014808625,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'PARTITION   AVAIL  TIMELIMIT  NODES  STATE  NODELIST\\ngpu         up     infinite       1  idle   gpu-node-01\\ngpu         up     infinite       1  alloc  gpu-no"
+    },
+    {
+      "test_id": "mcp_010",
+      "tool_name": "sinfo",
+      "category": "query",
+      "description": "sinfo - filter by state idle",
+      "passed": true,
+      "latency_ms": 0.1956429987330921,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'PARTITION   AVAIL  TIMELIMIT  NODES  STATE  NODELIST\\ngpu         up     infinite       1  idle   gpu-node-01\\ncpu         up     infinite       1  idle   cpu-no"
+    },
+    {
+      "test_id": "mcp_011",
+      "tool_name": "sinfo",
+      "category": "query",
+      "description": "sinfo - filter by state alloc",
+      "passed": true,
+      "latency_ms": 0.17851899974630214,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'PARTITION   AVAIL  TIMELIMIT  NODES  STATE  NODELIST\\ngpu         up     infinite       1  alloc  gpu-node-02'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_012",
+      "tool_name": "sacct",
+      "category": "query",
+      "description": "sacct - no params",
+      "passed": true,
+      "latency_ms": 0.2370430011069402,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JobID           JobName         State      Elapsed   AllocCPUS     MaxRSS   ExitCode\\n--------------- --------------- ---------- ---------- ---------- ----------"
+    },
+    {
+      "test_id": "mcp_013",
+      "tool_name": "sacct",
+      "category": "query",
+      "description": "sacct - filter by user",
+      "passed": true,
+      "latency_ms": 0.2460569994582329,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JobID           JobName         State      Elapsed   AllocCPUS     MaxRSS   ExitCode\\n--------------- --------------- ---------- ---------- ---------- ----------"
+    },
+    {
+      "test_id": "mcp_014",
+      "tool_name": "sacct",
+      "category": "query",
+      "description": "sacct - filter by state FAILED",
+      "passed": true,
+      "latency_ms": 0.29921199893578887,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JobID           JobName         State      Elapsed   AllocCPUS     MaxRSS   ExitCode\\n--------------- --------------- ---------- ---------- ---------- ----------"
+    },
+    {
+      "test_id": "mcp_015",
+      "tool_name": "sacct",
+      "category": "query",
+      "description": "sacct - filter by state COMPLETED",
+      "passed": true,
+      "latency_ms": 0.2210200000263285,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JobID           JobName         State      Elapsed   AllocCPUS     MaxRSS   ExitCode\\n--------------- --------------- ---------- ---------- ---------- ----------"
+    },
+    {
+      "test_id": "mcp_016",
+      "tool_name": "scontrol_show",
+      "category": "query",
+      "description": "scontrol_show job",
+      "passed": true,
+      "latency_ms": 0.19769899881794117,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Error: Must specify job_id'}], 'isError': True}"
+    },
+    {
+      "test_id": "mcp_017",
+      "tool_name": "scontrol_show",
+      "category": "query",
+      "description": "scontrol_show partition",
+      "passed": true,
+      "latency_ms": 0.1871979984571226,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Error: Must specify job_id'}], 'isError': True}"
+    },
+    {
+      "test_id": "mcp_018",
+      "tool_name": "scontrol_show",
+      "category": "query",
+      "description": "scontrol_show node",
+      "passed": true,
+      "latency_ms": 0.17421099983039312,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Error: Must specify job_id'}], 'isError': True}"
+    },
+    {
+      "test_id": "mcp_019",
+      "tool_name": "run_analysis",
+      "category": "analysis",
+      "description": "analyze_cluster_status",
+      "passed": true,
+      "latency_ms": 0.17752799976733513,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': '\\n=== Cluster Status Analysis ===\\nDate: 2025-12-21 17:29:46\\n\\nSUMMARY:\\n- Total Jobs: 4\\n- Running: 3\\n- Pending: 1\\n- Failed: 0\\n\\nRUNNING JOBS:\\n  Job 1001 ("
+    },
+    {
+      "test_id": "mcp_020",
+      "tool_name": "run_analysis",
+      "category": "analysis",
+      "description": "analyze_failed_jobs",
+      "passed": true,
+      "latency_ms": 0.1855409973359201,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': '\\n=== Cluster Status Analysis ===\\nDate: 2025-12-21 17:29:46\\n\\nSUMMARY:\\n- Total Jobs: 4\\n- Running: 3\\n- Pending: 1\\n- Failed: 0\\n\\nRUNNING JOBS:\\n  Job 1001 ("
+    },
+    {
+      "test_id": "mcp_021",
+      "tool_name": "run_analysis",
+      "category": "analysis",
+      "description": "analyze_pending_jobs",
+      "passed": true,
+      "latency_ms": 0.18062899835058488,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': '\\n=== Cluster Status Analysis ===\\nDate: 2025-12-21 17:29:46\\n\\nSUMMARY:\\n- Total Jobs: 4\\n- Running: 3\\n- Pending: 1\\n- Failed: 0\\n\\nRUNNING JOBS:\\n  Job 1001 ("
+    },
+    {
+      "test_id": "mcp_022",
+      "tool_name": "run_analysis",
+      "category": "analysis",
+      "description": "analyze_my_jobs",
+      "passed": true,
+      "latency_ms": 0.185879001946887,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': '\\n=== Cluster Status Analysis ===\\nDate: 2025-12-21 17:29:46\\n\\nSUMMARY:\\n- Total Jobs: 4\\n- Running: 3\\n- Pending: 1\\n- Failed: 0\\n\\nRUNNING JOBS:\\n  Job 1001 ("
+    },
+    {
+      "test_id": "mcp_023",
+      "tool_name": "run_analysis",
+      "category": "analysis",
+      "description": "analyze_gpu_resources",
+      "passed": true,
+      "latency_ms": 0.30409000100917183,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': '\\n=== Cluster Status Analysis ===\\nDate: 2025-12-21 17:29:46\\n\\nSUMMARY:\\n- Total Jobs: 4\\n- Running: 3\\n- Pending: 1\\n- Failed: 0\\n\\nRUNNING JOBS:\\n  Job 1001 ("
+    },
+    {
+      "test_id": "mcp_024",
+      "tool_name": "sacctmgr_show",
+      "category": "accounting",
+      "description": "sacctmgr_show account",
+      "passed": true,
+      "latency_ms": 0.46345999726327136,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Account|Descr|Org\\nroot|default account|root\\nresearch|Research group|science\\nengineering|Engineering team|eng'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_025",
+      "tool_name": "sacctmgr_show",
+      "category": "accounting",
+      "description": "sacctmgr_show user",
+      "passed": true,
+      "latency_ms": 0.4431369998201262,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'User|Def Acct|Admin\\nalice|research|None\\nbob|engineering|None\\ncharlie|research|Operator'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_026",
+      "tool_name": "sacctmgr_show",
+      "category": "accounting",
+      "description": "sacctmgr_show qos",
+      "passed": true,
+      "latency_ms": 0.40925700159277767,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Name|Priority|MaxWall|MaxJobs\\nnormal|50|7-00:00:00|100\\nhigh|100|1-00:00:00|20\\nlow|10|14-00:00:00|500'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_027",
+      "tool_name": "sreport",
+      "category": "accounting",
+      "description": "sreport cluster utilization",
+      "passed": true,
+      "latency_ms": 0.369901998055866,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Cluster|Allocated|Down|Idle|Reserved|Reported\\ncluster1|75%|2%|20%|3%|100%'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_028",
+      "tool_name": "sreport",
+      "category": "accounting",
+      "description": "sreport user top usage",
+      "passed": true,
+      "latency_ms": 0.33450699993409216,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'User|Account|Used\\ncharlie|engineering|2000 cpu-hours\\nalice|research|1500 cpu-hours\\nbob|research|800 cpu-hours'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_029",
+      "tool_name": "sbatch",
+      "category": "action",
+      "description": "sbatch submit job",
+      "passed": true,
+      "latency_ms": 0.31891399703454226,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Submitted batch job 5044'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_030",
+      "tool_name": "scancel",
+      "category": "action",
+      "description": "scancel job",
+      "passed": true,
+      "latency_ms": 0.30822999906376936,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Cancelled job 9999'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_031",
+      "tool_name": "scontrol_hold",
+      "category": "action",
+      "description": "scontrol_hold job",
+      "passed": true,
+      "latency_ms": 0.3018829993379768,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Job 9999 held'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_032",
+      "tool_name": "scontrol_release",
+      "category": "action",
+      "description": "scontrol_release job",
+      "passed": true,
+      "latency_ms": 0.30288699781522155,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Job 9999 released'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_033",
+      "tool_name": "scontrol_update",
+      "category": "action",
+      "description": "scontrol_update job",
+      "passed": true,
+      "latency_ms": 0.30159200105117634,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Job 9999 updated: TimeLimit=2:00:00'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_034",
+      "tool_name": "scontrol_requeue",
+      "category": "action",
+      "description": "scontrol_requeue job",
+      "passed": true,
+      "latency_ms": 0.29482899844879285,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Job 9999 requeued successfully'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_035",
+      "tool_name": "srun",
+      "category": "interactive",
+      "description": "srun command",
+      "passed": true,
+      "latency_ms": 0.2987179977935739,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': '[Mock] srun executed on 1 node(s) with 1 task(s): hostname\\nnode01\\nnode02'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_036",
+      "tool_name": "salloc",
+      "category": "interactive",
+      "description": "salloc allocation",
+      "passed": true,
+      "latency_ms": 0.3295499991509132,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'salloc: Granted job allocation 7809\\nsalloc: Nodes node[01-02] are ready for job'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_037",
+      "tool_name": "scontrol_create",
+      "category": "admin",
+      "description": "scontrol_create reservation",
+      "passed": true,
+      "latency_ms": 0.254249000136042,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': \"Reservation 'test_res' created successfully\"}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_038",
+      "tool_name": "scontrol_delete",
+      "category": "admin",
+      "description": "scontrol_delete reservation",
+      "passed": true,
+      "latency_ms": 0.20331099949544296,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': \"Reservation 'test_res' deleted successfully\"}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_039",
+      "tool_name": "sacctmgr_add",
+      "category": "admin",
+      "description": "sacctmgr_add account",
+      "passed": true,
+      "latency_ms": 0.19362600141903386,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': \" Adding Account 'test_account'\\n Would you like to commit changes? (yes/no): yes\"}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_040",
+      "tool_name": "sacctmgr_modify",
+      "category": "admin",
+      "description": "sacctmgr_modify account",
+      "passed": true,
+      "latency_ms": 0.1888129991129972,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': \" Modified account 'test_account'\\n Would you like to commit changes? (yes/no): yes\"}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_041",
+      "tool_name": "sacctmgr_delete",
+      "category": "admin",
+      "description": "sacctmgr_delete account",
+      "passed": true,
+      "latency_ms": 0.1775230011844542,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': ' Deleting accounts...\\n  test_account\\n Would you like to commit changes? (yes/no): yes'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_042",
+      "tool_name": "squeue",
+      "category": "edge_case",
+      "description": "squeue - nonexistent user",
+      "passed": true,
+      "latency_ms": 0.177573998371372,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'JOBID|NAME|ST|TIME|NODES|CPUS|MIN_MEM|PARTITION|USER\\n'}], 'isError': False}"
+    },
+    {
+      "test_id": "mcp_043",
+      "tool_name": "scontrol_show",
+      "category": "edge_case",
+      "description": "scontrol_show - invalid job",
+      "passed": true,
+      "latency_ms": 0.16857100126799196,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': 'Error: Must specify job_id'}], 'isError': True}"
+    },
+    {
+      "test_id": "mcp_044",
+      "tool_name": "run_analysis",
+      "category": "edge_case",
+      "description": "run_analysis - invalid script",
+      "passed": true,
+      "latency_ms": 0.1733030003379099,
+      "error": null,
+      "response_preview": "{'content': [{'type': 'text', 'text': '\\n=== Cluster Status Analysis ===\\nDate: 2025-12-21 17:29:46\\n\\nSUMMARY:\\n- Total Jobs: 4\\n- Running: 3\\n- Pending: 1\\n- Failed: 0\\n\\nRUNNING JOBS:\\n  Job 1001 ("
+    }
+  ]
+}
